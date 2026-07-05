@@ -129,7 +129,7 @@ before_show_menu() {
     show_menu
 }
 
-install() {
+install_panel_release() {
     bash <(curl -Ls "$(xui_raw_url install-residential-ip.sh)") "${xui_github_ref}"
     if [[ $? == 0 ]]; then
         if [[ $# == 0 ]]; then
@@ -294,7 +294,7 @@ install_result_upsert() {
     local value="$2"
     local escaped
     escaped=$(printf '%q' "$value")
-    install -d -m 700 /etc/x-ui 2> /dev/null || true
+    /usr/bin/install -d -m 700 /etc/x-ui 2> /dev/null || true
     touch "${xui_install_result_file}"
     chmod 600 "${xui_install_result_file}" 2> /dev/null || true
     if grep -q "^${key}=" "${xui_install_result_file}" 2> /dev/null; then
@@ -3127,7 +3127,7 @@ pg_install_local() {
         opensuse-tumbleweed | opensuse-leap)
             zypper -q install -y postgresql-server postgresql-contrib >&2 || return 1
             if [[ ! -f /var/lib/pgsql/data/PG_VERSION ]]; then
-                install -d -o postgres -g postgres -m 700 /var/lib/pgsql/data >&2 || return 1
+                /usr/bin/install -d -o postgres -g postgres -m 700 /var/lib/pgsql/data >&2 || return 1
                 su - postgres -c "initdb -D /var/lib/pgsql/data" >&2 || return 1
             fi
             ;;
@@ -3222,7 +3222,7 @@ pg_ensure_client() {
 pg_write_env() {
     local dsn="$1" envfile
     envfile="$(xui_env_file_path)"
-    install -d -m 755 "$(dirname "$envfile")"
+    /usr/bin/install -d -m 755 "$(dirname "$envfile")"
     touch "$envfile"
     sed -i '/^XUI_DB_TYPE=/d; /^XUI_DB_DSN=/d' "$envfile"
     {
@@ -3547,7 +3547,7 @@ show_menu() {
             exit 0
             ;;
         1)
-            check_uninstall && install
+            check_uninstall && install_panel_release
             ;;
         2)
             check_install && update
@@ -3702,7 +3702,7 @@ if [[ $# > 0 ]]; then
             check_install 0 && legacy_version 0
             ;;
         "install")
-            check_uninstall 0 && install 0
+            check_uninstall 0 && install_panel_release 0
             ;;
         "uninstall")
             check_install 0 && uninstall 0
