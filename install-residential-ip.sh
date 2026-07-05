@@ -40,6 +40,9 @@ BUILD_SWAP_SIZE_MB="${BUILD_SWAP_SIZE_MB:-2048}"
 NODE_BUILD_HEAP_MB="${NODE_BUILD_HEAP_MB:-384}"
 MIN_BUILD_RAM_MB="${MIN_BUILD_RAM_MB:-1500}"
 CREATED_BUILD_SWAP="0"
+TMP_NPM_CACHE="${TMP_NPM_CACHE:-/tmp/xui-npm-cache}"
+TMP_GOMODCACHE="${TMP_GOMODCACHE:-/tmp/xui-go-modcache}"
+TMP_GOCACHE="${TMP_GOCACHE:-/tmp/xui-go-buildcache}"
 
 if [[ $EUID -ne 0 ]]; then
   echo -e "${red}Please run this installer as root.${plain}"
@@ -98,7 +101,16 @@ cleanup_build_swap() {
   rm -f "${BUILD_SWAPFILE}" >/dev/null 2>&1 || true
 }
 
-trap cleanup_build_swap EXIT
+cleanup_build_caches() {
+  rm -rf "${TMP_NPM_CACHE}" "${TMP_GOMODCACHE}" "${TMP_GOCACHE}" >/dev/null 2>&1 || true
+}
+
+cleanup_all() {
+  cleanup_build_swap
+  cleanup_build_caches
+}
+
+trap cleanup_all EXIT
 
 apt_install() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
@@ -183,18 +195,24 @@ sync_repo() {
 
 build_panel() {
   ensure_build_swap
+  cleanup_build_caches
+  mkdir -p "${TMP_NPM_CACHE}" "${TMP_GOMODCACHE}" "${TMP_GOCACHE}"
 
   info "Building frontend"
   pushd "$SRC_ROOT/frontend" >/dev/null
-  npm ci --no-fund --no-audit >/dev/null
-  CI=1 npm_config_jobs=1 NODE_OPTIONS="--max-old-space-size=${NODE_BUILD_HEAP_MB}" npm run build >/dev/null
+  npm_config_cache="${TMP_NPM_CACHE}" npm ci --no-fund --no-audit >/dev/null
+  CI=1 npm_config_jobs=1 npm_config_cache="${TMP_NPM_CACHE}" NODE_OPTIONS="--max-old-space-size=${NODE_BUILD_HEAP_MB}" npm run build >/dev/null
+  rm -rf node_modules
+  npm_config_cache="${TMP_NPM_CACHE}" npm cache clean --force >/dev/null 2>&1 || true
   popd >/dev/null
 
   info "Building x-ui binary"
   pushd "$SRC_ROOT" >/dev/null
-  /usr/local/go/bin/go build -ldflags "-w -s" -o build/x-ui main.go
+  GOMODCACHE="${TMP_GOMODCACHE}" GOCACHE="${TMP_GOCACHE}" /usr/local/go/bin/go build -ldflags "-w -s" -o build/x-ui main.go
   sh ./DockerInit.sh "$ARCH" >/dev/null
   popd >/dev/null
+
+  cleanup_build_caches
 }
 
 install_panel_files() {
