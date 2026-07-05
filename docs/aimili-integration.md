@@ -146,6 +146,13 @@ And also adds Residential IP / Aimili visibility:
 - Aimili start / stop / restart
 - Aimili log tail
 
+For end users, the installer only prints the panel URL, panel username, and panel password by default.
+The extra Residential IP / Aimili details stay available through:
+
+```bash
+x-ui info
+```
+
 ## Rollback
 
 To remove the integration from `3x-ui` only:

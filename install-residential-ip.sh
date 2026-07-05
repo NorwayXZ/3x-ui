@@ -529,19 +529,8 @@ write_install_result() {
 }
 
 print_summary() {
-  local host ip aimili_user aimili_pass aimili_port aimili_secret
+  local host
   host="$(curl -4fsSL https://api.ipify.org || hostname -I | awk '{print $1}')"
-  aimili_user="-"
-  aimili_pass="-"
-  aimili_port="8787"
-  aimili_secret="-"
-
-  if [[ -f "$AIMILI_AUTH_FILE" ]]; then
-    aimili_user="$(python3 -c "import json; print(json.load(open(${AIMILI_AUTH_FILE@Q})).get('username','-'))" 2>/dev/null || echo '-')"
-    aimili_pass="$(python3 -c "import json; print(json.load(open(${AIMILI_AUTH_FILE@Q})).get('password','-'))" 2>/dev/null || echo '-')"
-    aimili_port="$(python3 -c "import json; print(json.load(open(${AIMILI_AUTH_FILE@Q})).get('port',8787))" 2>/dev/null || echo '8787')"
-    aimili_secret="$(python3 -c "import json; print(json.load(open(${AIMILI_AUTH_FILE@Q})).get('secret_path','-'))" 2>/dev/null || echo '-')"
-  fi
 
   echo
   echo -e "${green}==========================================================${plain}"
@@ -550,11 +539,8 @@ print_summary() {
   echo -e "Panel URL:      ${blue}http://${host}:${PANEL_PORT}/${PANEL_BASE_PATH}${plain}"
   echo -e "Panel user:     ${yellow}${PANEL_USERNAME}${plain}"
   echo -e "Panel password: ${yellow}${PANEL_PASSWORD}${plain}"
-  echo -e "Aimili entry:   ${blue}http://${host}:${PANEL_PORT}/panel/aimili${plain}"
-  echo -e "Console entry:  ${blue}http://${host}:${PANEL_PORT}/panel/aimili-console/${plain}"
-  echo -e "Aimili user:    ${yellow}${aimili_user}${plain}"
-  echo -e "Aimili password:${yellow}${aimili_pass}${plain}"
-  echo -e "Aimili loopback:${blue}http://127.0.0.1:${aimili_port}/${aimili_secret}/${plain}"
+  echo -e "Residential IP: ${blue}Open the 3x-ui panel and enter the 'Residential IP' page${plain}"
+  echo -e "Tips:           ${yellow}run 'x-ui info' on the VPS to see advanced panel / Aimili details${plain}"
   echo -e "${green}==========================================================${plain}"
 }
 
