@@ -3582,7 +3582,7 @@ show_menu() {
             check_install && set_port
             ;;
         11)
-            check_install && check_config
+            check_install && check_config 0
             ;;
         12)
             check_install && start
