@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -903,6 +904,9 @@ func (s *SettingService) GetIpLimitEnable() (bool, error) {
 func (s *SettingService) GetAccessLogEnable() (bool, error) {
 	accessLogPath, err := xray.GetAccessLogPath()
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
 		return false, err
 	}
 	return (accessLogPath != "none" && accessLogPath != ""), nil

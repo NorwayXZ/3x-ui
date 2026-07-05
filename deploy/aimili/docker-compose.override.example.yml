@@ -1,0 +1,34 @@
+services:
+  3xui:
+    environment:
+      AIMILI_ENABLED: "true"
+      AIMILI_CONTROL_MODE: "none"
+      AIMILI_UI_MODE: "proxy"
+      AIMILI_TARGET_SCHEME: "http"
+      AIMILI_TARGET_HOST: "aimili"
+      AIMILI_AUTH_FILE: "/aimili-data/ui_auth.json"
+      AIMILI_STATE_FILE: "/aimili-data/state.json"
+      AIMILI_LOG_FILE: "/aimili-data/vpngate.log"
+    volumes:
+      - ./aimili-data:/aimili-data:ro
+
+  aimili:
+    image: python:3.12-alpine
+    container_name: aimili
+    working_dir: /opt/aimilivpn
+    command: ["python3", "vpngate_manager.py"]
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      UI_HOST: "0.0.0.0"
+      UI_PORT: "8787"
+      LOCAL_PROXY_HOST: "127.0.0.1"
+      LOCAL_PROXY_PORT: "7928"
+      VPNGATE_DATA_DIR: "/opt/aimilivpn/vpngate_data"
+    volumes:
+      - ./aimili-app:/opt/aimilivpn
+      - ./aimili-data:/opt/aimilivpn/vpngate_data
+    restart: unless-stopped

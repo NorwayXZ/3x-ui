@@ -16,6 +16,7 @@ import (
 type APIController struct {
 	BaseController
 	inboundController     *InboundController
+	aimiliController      *AimiliController
 	serverController      *ServerController
 	nodeController        *NodeController
 	hostController        *HostController
@@ -97,6 +98,10 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 	// Hosts API — per-inbound override endpoints for subscription links
 	hosts := api.Group("/hosts")
 	a.hostController = NewHostController(hosts)
+
+	// AimiliVPN integration — thin control plane over an external service.
+	aimili := api.Group("/aimili")
+	a.aimiliController = NewAimiliAPIController(aimili)
 
 	// Settings + Xray config management live under the API surface too, so the
 	// same API token drives them. Paths are /panel/api/setting/* and

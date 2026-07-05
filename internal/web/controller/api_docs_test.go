@@ -85,6 +85,8 @@ func TestAPIRoutesDocumented(t *testing.T) {
 			basePath = "/panel"
 		case "api.go":
 			basePath = "/panel/api"
+		case "aimili.go":
+			basePath = "/panel/api/aimili"
 		case "inbound.go":
 			basePath = "/panel/api/inbounds"
 		case "client.go":
@@ -132,7 +134,7 @@ func TestAPIRoutesDocumented(t *testing.T) {
 		spaPages := map[string]bool{
 			"/": true, "/panel/": true, "/panel/inbounds": true,
 			"/panel/clients": true, "/panel/groups": true,
-			"/panel/nodes": true, "/panel/settings": true,
+			"/panel/nodes": true, "/panel/aimili": true, "/panel/settings": true,
 			"/panel/xray": true, "/panel/outbound": true,
 			"/panel/routing": true, "/panel/api-docs": true,
 		}

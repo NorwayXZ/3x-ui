@@ -2422,6 +2422,10 @@
       "description": "Per-inbound override endpoints. Each enabled host renders one extra subscription link/proxy with its own address/port/TLS, superseding the legacy externalProxy array. All endpoints under /panel/api/hosts."
     },
     {
+      "name": "AimiliVPN Integration",
+      "description": "Thin control-plane endpoints for an external AimiliVPN / VPNGate service. 3x-ui only reads status, starts/stops the service, tails logs, and exposes the original Aimili web UI through a same-origin reverse proxy when configured."
+    },
+    {
       "name": "Backup",
       "description": "Operations that interact with the configured Telegram bot."
     },
@@ -8891,6 +8895,198 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/aimili/status": {
+      "get": {
+        "tags": [
+          "AimiliVPN Integration"
+        ],
+        "summary": "Read the current Aimili integration status: detected files, service state, console URLs, UI metadata, and the latest runtime state parsed from state.json.",
+        "operationId": "get_panel_api_aimili_status",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/aimili/console": {
+      "get": {
+        "tags": [
+          "AimiliVPN Integration"
+        ],
+        "summary": "Return the preferred console URL plus the explicit proxy/direct variants used by the panel’s “Open Console” action.",
+        "operationId": "get_panel_api_aimili_console",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/aimili/logs": {
+      "get": {
+        "tags": [
+          "AimiliVPN Integration"
+        ],
+        "summary": "Tail recent Aimili logs. Prefers the configured log file, then falls back to journalctl or docker logs depending on the configured control mode.",
+        "operationId": "get_panel_api_aimili_logs",
+        "parameters": [
+          {
+            "name": "lines",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of lines to return.",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/aimili/start": {
+      "post": {
+        "tags": [
+          "AimiliVPN Integration"
+        ],
+        "summary": "Start the external Aimili service through the configured control mode (systemd, OpenRC, or docker).",
+        "operationId": "post_panel_api_aimili_start",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/aimili/stop": {
+      "post": {
+        "tags": [
+          "AimiliVPN Integration"
+        ],
+        "summary": "Stop the external Aimili service through the configured control mode.",
+        "operationId": "post_panel_api_aimili_stop",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/aimili/restart": {
+      "post": {
+        "tags": [
+          "AimiliVPN Integration"
+        ],
+        "summary": "Restart the external Aimili service through the configured control mode.",
+        "operationId": "post_panel_api_aimili_restart",
         "responses": {
           "200": {
             "description": "Successful response",

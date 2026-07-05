@@ -1,0 +1,208 @@
+.aimili-page .content-area {
+  background:
+    radial-gradient(circle at top left, rgba(53, 105, 255, 0.08), transparent 26%),
+    radial-gradient(circle at top right, rgba(17, 167, 95, 0.08), transparent 24%),
+    linear-gradient(180deg, #eef2f8 0%, #e7ebf3 100%);
+}
+
+.aimili-page.is-dark .content-area,
+.aimili-page.is-ultra .content-area {
+  background:
+    radial-gradient(circle at top left, rgba(53, 105, 255, 0.12), transparent 26%),
+    radial-gradient(circle at top right, rgba(17, 167, 95, 0.12), transparent 24%),
+    linear-gradient(180deg, #101621 0%, #0b1018 100%);
+}
+
+.aimili-hero-card,
+.aimili-card {
+  border-radius: 24px !important;
+  box-shadow: 0 22px 44px rgba(24, 39, 75, 0.08);
+  overflow: hidden;
+}
+
+.aimili-page.is-dark .aimili-hero-card,
+.aimili-page.is-dark .aimili-card,
+.aimili-page.is-ultra .aimili-hero-card,
+.aimili-page.is-ultra .aimili-card {
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.28);
+}
+
+.aimili-hero-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.aimili-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.aimili-hero-title {
+  margin-bottom: 6px !important;
+}
+
+.aimili-hero-subtitle {
+  margin: 0 !important;
+  color: rgba(31, 41, 55, 0.65);
+  font-size: 15px;
+}
+
+.aimili-page.is-dark .aimili-hero-subtitle,
+.aimili-page.is-ultra .aimili-hero-subtitle {
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.aimili-current-card .ant-card-body {
+  padding: 28px !important;
+}
+
+.aimili-current-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.aimili-card-label {
+  color: rgba(107, 114, 128, 0.9);
+  font-size: 14px;
+}
+
+.aimili-ip-value {
+  margin: 10px 0 12px;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  word-break: break-word;
+}
+
+.aimili-inline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.aimili-kpi-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.aimili-kpi {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(57, 84, 133, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aimili-page.is-dark .aimili-kpi,
+.aimili-page.is-ultra .aimili-kpi {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.aimili-kpi-label {
+  color: rgba(107, 114, 128, 0.88);
+  font-size: 13px;
+}
+
+.aimili-kpi-value {
+  font-size: 15px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.aimili-service-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.aimili-status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.aimili-service-text {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aimili-service-muted {
+  max-width: 60%;
+  text-align: right;
+  color: rgba(75, 85, 99, 0.9);
+}
+
+.aimili-page.is-dark .aimili-service-muted,
+.aimili-page.is-ultra .aimili-service-muted {
+  color: rgba(203, 213, 225, 0.78);
+}
+
+.aimili-history-list .ant-list-item {
+  padding: 14px 0;
+}
+
+.aimili-history-head,
+.aimili-history-body {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+}
+
+.aimili-history-body {
+  color: rgba(75, 85, 99, 0.9);
+  font-size: 13px;
+}
+
+.aimili-page.is-dark .aimili-history-body,
+.aimili-page.is-ultra .aimili-history-body {
+  color: rgba(203, 213, 225, 0.78);
+}
+
+.aimili-log-pane {
+  margin-bottom: 0 !important;
+  max-height: 500px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+@media (max-width: 1180px) {
+  .aimili-current-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .aimili-hero {
+    flex-direction: column;
+  }
+
+  .aimili-status-row,
+  .aimili-history-head,
+  .aimili-history-body {
+    flex-direction: column;
+  }
+
+  .aimili-service-muted {
+    max-width: none;
+    text-align: left;
+  }
+
+  .aimili-kpi-strip {
+    grid-template-columns: 1fr;
+  }
+}

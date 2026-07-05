@@ -1113,6 +1113,48 @@ export const sections: readonly Section[] = [
   },
 
   {
+    id: 'aimili',
+    title: 'AimiliVPN Integration',
+    description:
+      'Thin control-plane endpoints for an external AimiliVPN / VPNGate service. 3x-ui only reads status, starts/stops the service, tails logs, and exposes the original Aimili web UI through a same-origin reverse proxy when configured.',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/panel/api/aimili/status',
+        summary: 'Read the current Aimili integration status: detected files, service state, console URLs, UI metadata, and the latest runtime state parsed from state.json.',
+      },
+      {
+        method: 'GET',
+        path: '/panel/api/aimili/console',
+        summary: 'Return the preferred console URL plus the explicit proxy/direct variants used by the panel’s “Open Console” action.',
+      },
+      {
+        method: 'GET',
+        path: '/panel/api/aimili/logs',
+        summary: 'Tail recent Aimili logs. Prefers the configured log file, then falls back to journalctl or docker logs depending on the configured control mode.',
+        params: [
+          { name: 'lines', in: 'query', type: 'integer', desc: 'Maximum number of lines to return.', optional: true, defaultValue: 100 },
+        ],
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/aimili/start',
+        summary: 'Start the external Aimili service through the configured control mode (systemd, OpenRC, or docker).',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/aimili/stop',
+        summary: 'Stop the external Aimili service through the configured control mode.',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/aimili/restart',
+        summary: 'Restart the external Aimili service through the configured control mode.',
+      },
+    ],
+  },
+
+  {
     id: 'backup',
     title: 'Backup',
     description: 'Operations that interact with the configured Telegram bot.',

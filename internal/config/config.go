@@ -132,7 +132,13 @@ func GetBinFolderPath() string {
 	if binFolderPath == "" {
 		binFolderPath = "bin"
 	}
-	return binFolderPath
+	if filepath.IsAbs(binFolderPath) {
+		return binFolderPath
+	}
+	if mainFolder := strings.TrimSpace(os.Getenv("XUI_MAIN_FOLDER")); mainFolder != "" {
+		return filepath.Join(mainFolder, binFolderPath)
+	}
+	return filepath.Join(getBaseDir(), binFolderPath)
 }
 
 func getBaseDir() string {
