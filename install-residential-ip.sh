@@ -429,6 +429,7 @@ ensure_panel_credentials() {
 install_aimili() {
   local aimili_installer=""
   local aimili_log=""
+  local tail_pid=""
   if [[ "$AIMILI_INSTALL" != "true" ]]; then
     warn "Skipping Aimili installation because AIMILI_INSTALL=${AIMILI_INSTALL}"
     return
@@ -443,7 +444,29 @@ install_aimili() {
     return 1
   fi
   aimili_log="$(mktemp /tmp/aimili-install-output.XXXXXX.log)"
+  info "Aimili installation may take 1-3 minutes on first run. Waiting for node fetch and first tunnel bring-up..."
+  touch "${aimili_log}"
+  tail -n 0 -F "${aimili_log}" 2>/dev/null \
+    | stdbuf -oL awk '
+        /目标分支:/ ||
+        /首次快速连接模式/ ||
+        /正在拉取最新的免费 VPN 节点列表/ ||
+        /控制通道已建立/ ||
+        /正在创建虚拟通道/ ||
+        /正在直连测试代理出口延迟与可用性/ ||
+        /\[已就绪\]/ ||
+        /首次节点连接成功/ ||
+        /加载超时/ ||
+        /错误代码/ ||
+        /失败/ {
+          print "    " $0
+          fflush()
+        }
+    ' &
+  tail_pid=$!
   if ! bash "${aimili_installer}" >"${aimili_log}" 2>&1; then
+    [[ -n "${tail_pid}" ]] && kill "${tail_pid}" >/dev/null 2>&1 || true
+    wait "${tail_pid}" 2>/dev/null || true
     rm -f "${aimili_installer}"
     echo -e "${red}Aimili installer failed.${plain}" >&2
     echo -e "${yellow}Last installer log lines:${plain}" >&2
@@ -453,6 +476,8 @@ install_aimili() {
     disk_cleanup_hint
     return 1
   fi
+  [[ -n "${tail_pid}" ]] && kill "${tail_pid}" >/dev/null 2>&1 || true
+  wait "${tail_pid}" 2>/dev/null || true
   rm -f "${aimili_installer}"
   rm -f "${aimili_log}"
   info "Aimili service installed successfully"
