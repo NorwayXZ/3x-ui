@@ -72,7 +72,12 @@ esac
 
 rand_alnum() {
   local len="$1"
-  tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$len"
+  python3 - <<PY
+import secrets
+import string
+chars = string.ascii_letters + string.digits
+print(''.join(secrets.choice(chars) for _ in range(${len})))
+PY
 }
 
 rand_password() {
