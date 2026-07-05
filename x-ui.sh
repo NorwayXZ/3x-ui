@@ -118,7 +118,7 @@ confirm() {
 confirm_restart() {
     confirm "Restart the panel, Attention: Restarting the panel will also restart xray" "y"
     if [[ $? == 0 ]]; then
-        restart
+        restart 0
     else
         show_menu
     fi
@@ -529,13 +529,13 @@ show_saved_credentials() {
     aimili_user="$(install_result_get AIMILI_USERNAME || true)"
     aimili_pass="$(install_result_get AIMILI_PASSWORD || true)"
 
-    [[ -n "$panel_url" ]] && echo -e "${green}Recorded panel URL:${plain} ${panel_url}"
-    [[ -n "$panel_user" ]] && echo -e "${green}Recorded panel user:${plain} ${panel_user}"
-    [[ -n "$panel_pass" ]] && echo -e "${green}Recorded panel password:${plain} ${panel_pass}"
+    [[ -n "$panel_url" ]] && echo -e "${green}Last installed panel URL:${plain} ${panel_url}"
+    [[ -n "$panel_user" ]] && echo -e "${green}Last installed panel user:${plain} ${panel_user}"
+    [[ -n "$panel_pass" ]] && echo -e "${green}Last installed panel password:${plain} ${panel_pass}"
     [[ -n "$aimili_entry" ]] && echo -e "${green}Residential IP entry:${plain} ${aimili_entry}"
     [[ -n "$aimili_console" ]] && echo -e "${green}Residential console:${plain} ${aimili_console}"
-    [[ -n "$aimili_user" ]] && echo -e "${green}Recorded Aimili user:${plain} ${aimili_user}"
-    [[ -n "$aimili_pass" ]] && echo -e "${green}Recorded Aimili password:${plain} ${aimili_pass}"
+    [[ -n "$aimili_user" ]] && echo -e "${green}Last installed Aimili user:${plain} ${aimili_user}"
+    [[ -n "$aimili_pass" ]] && echo -e "${green}Last installed Aimili password:${plain} ${aimili_pass}"
 }
 
 show_aimili_config() {
