@@ -219,8 +219,7 @@ update_menu() {
     fi
 
     if replace_xui_script "$(xui_raw_url x-ui.sh)" "false"; then
-        chmod +x ${xui_folder}/x-ui.sh
-        echo -e "${green}Update successful. The panel has automatically restarted.${plain}"
+        echo -e "${green}Menu update successful. Please rerun x-ui to load the latest script.${plain}"
         exit 0
     else
         echo -e "${red}Failed to update the menu.${plain}"
@@ -229,18 +228,23 @@ update_menu() {
 }
 
 legacy_version() {
-    echo -n "Enter the panel version (like 2.4.0):"
+    echo -n "Enter the panel Git ref or tag (for example: release/residential-ip-v1): "
     read -r tag_version
 
     if [ -z "$tag_version" ]; then
-        echo "Panel version cannot be empty. Exiting."
-        exit 1
+        LOGE "Panel Git ref cannot be empty."
+        if [[ $# == 0 ]]; then
+            before_show_menu
+        fi
+        return 1
     fi
-    # Use the entered panel version in the download link
-    install_command="bash <(curl -Ls \"$(xui_raw_url install-residential-ip.sh)\") ${xui_github_ref}"
+    # Legacy installs in this fork are ref-based rather than release-number-based.
+    # Force a source build so the selected ref controls the runtime instead of the
+    # current branch's prebuilt package.
+    install_command="FORCE_SOURCE_BUILD=true bash <(curl -Ls \"$(xui_raw_url install-residential-ip.sh)\") ${tag_version}"
 
-    echo "Downloading and installing panel version $tag_version..."
-    eval $install_command
+    echo "Downloading and installing panel ref ${tag_version}..."
+    eval "$install_command"
 }
 
 # Function to handle the deletion of the script file
@@ -1096,7 +1100,7 @@ update_shell() {
 }
 
 xui_pid() {
-    ps -ef 2> /dev/null | grep -F "${xui_folder}/x-ui" | grep -v grep | awk 'NR==1 {print $1}'
+    ps -ef 2> /dev/null | grep -F "${xui_folder}/x-ui" | grep -v grep | awk 'NR==1 {print $2}'
 }
 
 signal_xui() {
