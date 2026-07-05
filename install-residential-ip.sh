@@ -206,6 +206,12 @@ build_panel() {
   npm_config_cache="${TMP_NPM_CACHE}" npm cache clean --force >/dev/null 2>&1 || true
   popd >/dev/null
 
+  # Frontend build is the memory-hungry step on tiny VPSes. Once it finishes,
+  # drop the temporary swap immediately so the following Go module download and
+  # compile stages recover that disk space.
+  cleanup_build_swap
+  CREATED_BUILD_SWAP="0"
+
   info "Building x-ui binary"
   pushd "$SRC_ROOT" >/dev/null
   GOMODCACHE="${TMP_GOMODCACHE}" GOCACHE="${TMP_GOCACHE}" /usr/local/go/bin/go build -ldflags "-w -s" -o build/x-ui main.go
