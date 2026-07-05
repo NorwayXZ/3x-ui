@@ -153,6 +153,8 @@ The extra Residential IP / Aimili details stay available through:
 x-ui info
 ```
 
+The upstream `aimili-vpngate` installer has its own verbose terminal summary. The Residential IP installer wraps that install step and only keeps the final `3x-ui`-focused summary visible to end users.
+
 ## Rollback
 
 To remove the integration from `3x-ui` only:

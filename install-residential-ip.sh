@@ -428,6 +428,7 @@ ensure_panel_credentials() {
 
 install_aimili() {
   local aimili_installer=""
+  local aimili_log=""
   if [[ "$AIMILI_INSTALL" != "true" ]]; then
     warn "Skipping Aimili installation because AIMILI_INSTALL=${AIMILI_INSTALL}"
     return
@@ -441,13 +442,20 @@ install_aimili() {
     warn "Failed to download the Aimili installer."
     return 1
   fi
-  if ! bash "${aimili_installer}"; then
+  aimili_log="$(mktemp /tmp/aimili-install-output.XXXXXX.log)"
+  if ! bash "${aimili_installer}" >"${aimili_log}" 2>&1; then
     rm -f "${aimili_installer}"
+    echo -e "${red}Aimili installer failed.${plain}" >&2
+    echo -e "${yellow}Last installer log lines:${plain}" >&2
+    tail -n 40 "${aimili_log}" >&2 || true
+    rm -f "${aimili_log}"
     warn "Aimili installer failed. If the log shows 'No space left on device', free disk space and rerun this installer."
     disk_cleanup_hint
     return 1
   fi
   rm -f "${aimili_installer}"
+  rm -f "${aimili_log}"
+  info "Aimili service installed successfully"
 
   if [[ -f "$AIMILI_AUTH_FILE" ]]; then
     python3 - <<PY
@@ -529,16 +537,22 @@ write_install_result() {
 }
 
 print_summary() {
-  local host
+  local host panel_url panel_user panel_pass
   host="$(curl -4fsSL https://api.ipify.org || hostname -I | awk '{print $1}')"
+  panel_url="$(install_result_get PANEL_URL || true)"
+  panel_user="$(install_result_get PANEL_USERNAME || true)"
+  panel_pass="$(install_result_get PANEL_PASSWORD || true)"
+  [[ -z "$panel_url" ]] && panel_url="http://${host}:${PANEL_PORT}/${PANEL_BASE_PATH}"
+  [[ -z "$panel_user" ]] && panel_user="${PANEL_USERNAME}"
+  [[ -z "$panel_pass" ]] && panel_pass="${PANEL_PASSWORD}"
 
   echo
   echo -e "${green}==========================================================${plain}"
   echo -e "${green}Residential IP panel deployment completed.${plain}"
   echo -e "${green}==========================================================${plain}"
-  echo -e "Panel URL:      ${blue}http://${host}:${PANEL_PORT}/${PANEL_BASE_PATH}${plain}"
-  echo -e "Panel user:     ${yellow}${PANEL_USERNAME}${plain}"
-  echo -e "Panel password: ${yellow}${PANEL_PASSWORD}${plain}"
+  echo -e "Panel URL:      ${blue}${panel_url}${plain}"
+  echo -e "Panel user:     ${yellow}${panel_user}${plain}"
+  echo -e "Panel password: ${yellow}${panel_pass}${plain}"
   echo -e "Residential IP: ${blue}Open the 3x-ui panel and enter the 'Residential IP' page${plain}"
   echo -e "Tips:           ${yellow}run 'x-ui info' on the VPS to see advanced panel / Aimili details${plain}"
   echo -e "${green}==========================================================${plain}"
