@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
+import type { RefObject } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Alert,
@@ -18,13 +19,15 @@ import {
 } from 'antd';
 import {
   CheckCircleOutlined,
+  DownOutlined,
   FieldTimeOutlined,
   LinkOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
-  StopOutlined,
   StarFilled,
+  StopOutlined,
   SwapOutlined,
+  UpOutlined,
 } from '@ant-design/icons';
 
 import AppSidebar from '@/layouts/AppSidebar';
@@ -63,6 +66,8 @@ interface AimiliFavoriteNode {
   latencyMs: number;
   active: boolean;
   quality: string;
+  probeStatus: string;
+  probeMessage: string;
 }
 
 interface AimiliFavoritesResult {
@@ -136,9 +141,34 @@ function formatTimestamp(value?: string) {
   return value.replace(' ', '\u00A0');
 }
 
+function favoriteStatusMeta(node: AimiliFavoriteNode) {
+  if (node.active) {
+    return { label: '当前使用', color: 'green' as const, disabled: true };
+  }
+  switch ((node.probeStatus || '').toLowerCase().trim()) {
+    case 'available':
+      return { label: '可用', color: 'green' as const, disabled: false };
+    case 'testing':
+    case 'checking':
+      return { label: '检测中', color: 'gold' as const, disabled: true };
+    case 'unavailable':
+    case 'failed':
+    case 'offline':
+      return { label: '失效', color: 'red' as const, disabled: true };
+    default:
+      return { label: '未知', color: 'default' as const, disabled: false };
+  }
+}
+
+function scrollCard(ref: RefObject<HTMLDivElement | null>, delta: number) {
+  ref.current?.scrollBy({ top: delta, behavior: 'smooth' });
+}
+
 export default function AimiliPage() {
   const { antdThemeConfig, isDark, isUltra } = useTheme();
   const [messageApi, messageContextHolder] = message.useMessage();
+  const historyScrollRef = useRef<HTMLDivElement | null>(null);
+  const favoritesScrollRef = useRef<HTMLDivElement | null>(null);
 
   const statusQuery = useQuery({
     queryKey: ['aimili', 'status'],
@@ -252,19 +282,6 @@ export default function AimiliPage() {
                     </Space>
                   </div>
 
-                  {!status?.enabled && (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      message="住宅 IP 集成尚未启用"
-                      description="请在 x-ui 服务环境文件中设置 AIMILI_ENABLED=true，然后重启 x-ui。"
-                    />
-                  )}
-
-                  {(status?.warnings || []).map((warning) => (
-                    <Alert key={warning} type="info" showIcon message={warning} />
-                  ))}
-
                   {statusQuery.error && (
                     <Alert
                       type="error"
@@ -373,66 +390,81 @@ export default function AimiliPage() {
 
                 <Row gutter={[18, 18]}>
                   <Col xs={24} xl={10}>
-                    <Card className="aimili-card" title="IP 切换记录" extra={<FieldTimeOutlined />}>
-                      {switchHistory.length ? (
-                        <List
-                          dataSource={switchHistory}
-                          className="aimili-history-list"
-                          renderItem={(item) => (
-                            <List.Item className="aimili-history-item">
-                              <div className="aimili-history-head">
-                                <Space wrap size={8}>
-                                  <Tag color="blue">{item.region || regionLabel(item.nodeId)}</Tag>
-                                  <Typography.Text strong>{item.exitIp}</Typography.Text>
-                                  <Tag color={item.trigger === '自动切换' ? 'gold' : 'green'}>{item.trigger}</Tag>
-                                </Space>
-                                <Typography.Text type="secondary">{formatTimestamp(item.timestamp)}</Typography.Text>
-                              </div>
-                              <div className="aimili-history-body">
-                                <span>{item.nodeId}</span>
-                                <span>{item.latencyMs ? `${item.latencyMs} ms` : '-'}</span>
-                              </div>
-                            </List.Item>
-                          )}
-                        />
-                      ) : (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有可展示的切换记录" />
-                      )}
+                    <Card
+                      className="aimili-card aimili-list-card"
+                      title="IP 切换记录"
+                      extra={
+                        <Space size={6}>
+                          <Button size="small" icon={<UpOutlined />} onClick={() => scrollCard(historyScrollRef, -220)} />
+                          <Button size="small" icon={<DownOutlined />} onClick={() => scrollCard(historyScrollRef, 220)} />
+                          <FieldTimeOutlined />
+                        </Space>
+                      }
+                    >
+                      <div className="aimili-scroll-pane" ref={historyScrollRef}>
+                        {switchHistory.length ? (
+                          <List
+                            dataSource={switchHistory}
+                            className="aimili-history-list"
+                            renderItem={(item) => (
+                              <List.Item className="aimili-history-item">
+                                <div className="aimili-history-head">
+                                  <Space wrap size={8}>
+                                    <Tag color="blue">{item.region || regionLabel(item.nodeId)}</Tag>
+                                    <Typography.Text strong>{item.exitIp}</Typography.Text>
+                                    <Tag color={item.trigger === '自动切换' ? 'gold' : 'green'}>{item.trigger}</Tag>
+                                  </Space>
+                                  <Typography.Text type="secondary">{formatTimestamp(item.timestamp)}</Typography.Text>
+                                </div>
+                                <div className="aimili-history-body">
+                                  <span>{item.nodeId}</span>
+                                  <span>{item.latencyMs ? `${item.latencyMs} ms` : '-'}</span>
+                                </div>
+                              </List.Item>
+                            )}
+                          />
+                        ) : (
+                          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有可展示的切换记录" />
+                        )}
+                      </div>
                     </Card>
                   </Col>
 
                   <Col xs={24} xl={14}>
                     <Card
-                      className="aimili-card"
+                      className="aimili-card aimili-list-card"
                       title="收藏 IP"
                       extra={
                         <Space size={8}>
                           <Tag color={favorites?.routingMode === 'favorites' ? 'gold' : 'default'}>
                             {favorites?.routingMode === 'favorites' ? '仅用收藏模式' : '普通模式'}
                           </Tag>
+                          <Button size="small" icon={<UpOutlined />} onClick={() => scrollCard(favoritesScrollRef, -220)} />
+                          <Button size="small" icon={<DownOutlined />} onClick={() => scrollCard(favoritesScrollRef, 220)} />
                           <Button size="small" onClick={() => void favoritesQuery.refetch()} icon={<ReloadOutlined />}>
                             刷新
                           </Button>
                         </Space>
                       }
                     >
-                      {favoriteNodes.length ? (
-                        <List
-                          dataSource={favoriteNodes}
-                          className="aimili-favorite-list"
-                          renderItem={(item) => {
-                            const switchDisabled = connectDisabled || item.active;
-                            return (
-                              <List.Item className="aimili-favorite-item">
-                                <div className="aimili-favorite-main">
-                                  <div className="aimili-favorite-head">
-                                    <Space wrap size={8}>
-                                      <Tag color="blue">{item.countryShort || regionLabel(item.id, item.country)}</Tag>
-                                      <Typography.Text strong>{item.ip}:{item.remotePort}</Typography.Text>
-                                      <Tag icon={<StarFilled />} color="gold">已收藏</Tag>
-                                      {item.active && <Tag color="green">当前使用</Tag>}
-                                    </Space>
-                                    <Space>
+                      <div className="aimili-scroll-pane" ref={favoritesScrollRef}>
+                        {favoriteNodes.length ? (
+                          <List
+                            dataSource={favoriteNodes}
+                            className="aimili-favorite-list"
+                            renderItem={(item) => {
+                              const statusMeta = favoriteStatusMeta(item);
+                              const switchDisabled = connectDisabled || statusMeta.disabled;
+                              return (
+                                <List.Item className="aimili-favorite-item">
+                                  <div className="aimili-favorite-main">
+                                    <div className="aimili-favorite-head">
+                                      <Space wrap size={8}>
+                                        <Tag color="blue">{item.countryShort || regionLabel(item.id, item.country)}</Tag>
+                                        <Typography.Text strong>{item.ip}:{item.remotePort}</Typography.Text>
+                                        <Tag icon={<StarFilled />} color="gold">已收藏</Tag>
+                                        <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
+                                      </Space>
                                       <Button
                                         type={item.active ? 'default' : 'primary'}
                                         icon={<SwapOutlined />}
@@ -442,24 +474,27 @@ export default function AimiliPage() {
                                       >
                                         {item.active ? '使用中' : '切换'}
                                       </Button>
-                                    </Space>
+                                    </div>
+                                    <div className="aimili-favorite-meta">
+                                      <span>{item.location || item.country || '-'}</span>
+                                      <span>{item.owner || item.ipType || '-'}</span>
+                                      <span>{item.latencyMs ? `${item.latencyMs} ms` : '-'}</span>
+                                    </div>
+                                    {item.probeMessage && (
+                                      <div className="aimili-favorite-note">{item.probeMessage}</div>
+                                    )}
                                   </div>
-                                  <div className="aimili-favorite-meta">
-                                    <span>{item.location || item.country || '-'}</span>
-                                    <span>{item.owner || item.ipType || '-'}</span>
-                                    <span>{item.latencyMs ? `${item.latencyMs} ms` : '-'}</span>
-                                  </div>
-                                </div>
-                              </List.Item>
-                            );
-                          }}
-                        />
-                      ) : (
-                        <Empty
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description="还没有收藏 IP。先在 Open Console 中把常用节点加入收藏，之后就可以直接在这里切换。"
-                        />
-                      )}
+                                </List.Item>
+                              );
+                            }}
+                          />
+                        ) : (
+                          <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description="还没有收藏 IP。先在 Open Console 中把常用节点加入收藏，之后就可以直接在这里切换。"
+                          />
+                        )}
+                      </div>
                     </Card>
                   </Col>
                 </Row>

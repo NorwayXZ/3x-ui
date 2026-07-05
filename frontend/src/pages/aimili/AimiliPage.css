@@ -152,6 +152,18 @@
   padding: 14px 0;
 }
 
+.aimili-list-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px !important;
+}
+
+.aimili-scroll-pane {
+  height: 520px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
 .aimili-history-head,
 .aimili-history-body {
   display: flex;
@@ -206,8 +218,16 @@
   font-size: 13px;
 }
 
+.aimili-favorite-note {
+  color: rgba(107, 114, 128, 0.9);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .aimili-page.is-dark .aimili-favorite-meta,
-.aimili-page.is-ultra .aimili-favorite-meta {
+.aimili-page.is-ultra .aimili-favorite-meta,
+.aimili-page.is-dark .aimili-favorite-note,
+.aimili-page.is-ultra .aimili-favorite-note {
   color: rgba(203, 213, 225, 0.78);
 }
 

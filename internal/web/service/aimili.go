@@ -85,6 +85,8 @@ type AimiliFavoriteNode struct {
 	LatencyMS    int    `json:"latencyMs"`
 	Active       bool   `json:"active"`
 	Quality      string `json:"quality"`
+	ProbeStatus  string `json:"probeStatus"`
+	ProbeMessage string `json:"probeMessage"`
 }
 
 type AimiliFavoritesResult struct {
@@ -187,18 +189,52 @@ type aimiliNodesState struct {
 }
 
 type aimiliNodeItem struct {
-	ID           string `json:"id"`
-	IP           string `json:"ip"`
-	RemoteHost   string `json:"remote_host"`
-	RemotePort   int    `json:"remote_port"`
-	Country      string `json:"country"`
-	CountryShort string `json:"country_short"`
-	Location     string `json:"location"`
-	Owner        string `json:"owner"`
-	IPType       string `json:"ip_type"`
-	LatencyMS    int    `json:"latency_ms"`
-	Active       bool   `json:"active"`
-	Quality      string `json:"quality"`
+	ID           string             `json:"id"`
+	IP           string             `json:"ip"`
+	RemoteHost   string             `json:"remote_host"`
+	RemotePort   int                `json:"remote_port"`
+	Country      string             `json:"country"`
+	CountryShort string             `json:"country_short"`
+	Location     string             `json:"location"`
+	Owner        string             `json:"owner"`
+	IPType       string             `json:"ip_type"`
+	LatencyMS    int                `json:"latency_ms"`
+	Active       aimiliFlexibleBool `json:"active"`
+	Quality      string             `json:"quality"`
+	ProbeStatus  string             `json:"probe_status"`
+	ProbeMessage string             `json:"probe_message"`
+}
+
+type aimiliFlexibleBool bool
+
+func (b *aimiliFlexibleBool) UnmarshalJSON(data []byte) error {
+	value := strings.TrimSpace(string(data))
+	switch value {
+	case "true", `"true"`, `"1"`, "1":
+		*b = true
+		return nil
+	case "false", `"false"`, `"0"`, "0", `""`, "null", "":
+		*b = false
+		return nil
+	default:
+		var boolValue bool
+		if err := json.Unmarshal(data, &boolValue); err == nil {
+			*b = aimiliFlexibleBool(boolValue)
+			return nil
+		}
+		var stringValue string
+		if err := json.Unmarshal(data, &stringValue); err == nil {
+			switch strings.ToLower(strings.TrimSpace(stringValue)) {
+			case "true", "1", "yes", "on":
+				*b = true
+				return nil
+			case "false", "0", "", "no", "off":
+				*b = false
+				return nil
+			}
+		}
+		return fmt.Errorf("invalid flexible bool: %s", value)
+	}
 }
 
 var (
@@ -326,8 +362,14 @@ func (s *AimiliService) GetStatus(basePath string) (*AimiliStatus, error) {
 		status.ServiceRunning = running
 	}
 
+	if !status.Enabled && (status.ServiceRunning || status.AuthFileExists || status.StateFileExists) {
+		status.Enabled = true
+	}
+
 	if !cfg.Enabled {
-		status.Warnings = append(status.Warnings, "Aimili integration is disabled. Set AIMILI_ENABLED=true in the x-ui service environment to enable panel management.")
+		if !(status.ServiceRunning || status.AuthFileExists || status.StateFileExists) {
+			status.Warnings = append(status.Warnings, "Aimili integration is disabled. Set AIMILI_ENABLED=true in the x-ui service environment to enable panel management.")
+		}
 	}
 	if cfg.ControlMode == "none" {
 		status.Warnings = append(status.Warnings, "Aimili control mode is read-only (AIMILI_CONTROL_MODE=none). Start/stop/restart actions are disabled.")
@@ -404,14 +446,19 @@ func (s *AimiliService) GetFavorites() (*AimiliFavoritesResult, error) {
 			Owner:        node.Owner,
 			IPType:       node.IPType,
 			LatencyMS:    node.LatencyMS,
-			Active:       node.Active,
+			Active:       bool(node.Active),
 			Quality:      node.Quality,
+			ProbeStatus:  node.ProbeStatus,
+			ProbeMessage: node.ProbeMessage,
 		})
 	}
 
 	sort.SliceStable(favorites, func(i, j int) bool {
 		if favorites[i].Active != favorites[j].Active {
 			return favorites[i].Active
+		}
+		if aimiliFavoriteStatusRank(favorites[i].ProbeStatus) != aimiliFavoriteStatusRank(favorites[j].ProbeStatus) {
+			return aimiliFavoriteStatusRank(favorites[i].ProbeStatus) < aimiliFavoriteStatusRank(favorites[j].ProbeStatus)
 		}
 		if favorites[i].LatencyMS != favorites[j].LatencyMS {
 			if favorites[i].LatencyMS == 0 {
@@ -432,6 +479,19 @@ func (s *AimiliService) GetFavorites() (*AimiliFavoritesResult, error) {
 		LastCheckMessage: payload.State.LastCheckMessage,
 		Favorites:        favorites,
 	}, nil
+}
+
+func aimiliFavoriteStatusRank(status string) int {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "available":
+		return 0
+	case "testing", "checking":
+		return 1
+	case "unavailable", "failed", "offline":
+		return 2
+	default:
+		return 3
+	}
 }
 
 func (s *AimiliService) ConnectNode(id, basePath string) (*AimiliActionResult, error) {
