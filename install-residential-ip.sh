@@ -9,7 +9,7 @@ plain='\033[0m'
 
 REPO_OWNER="${REPO_OWNER:-NorwayXZ}"
 REPO_NAME="${REPO_NAME:-3x-ui}"
-REPO_BRANCH="${1:-${REPO_BRANCH:-feature/embed-aimili-vpngate-restart}}"
+REPO_BRANCH="${1:-${REPO_BRANCH:-release/residential-ip-v1}}"
 PREBUILT_TAG="${PREBUILT_TAG:-residential-ip-prebuilt-v1}"
 PREBUILT_ASSET_AMD64="${PREBUILT_ASSET_AMD64:-3x-ui-residential-linux-amd64.tar.gz}"
 FORCE_SOURCE_BUILD="${FORCE_SOURCE_BUILD:-false}"
@@ -20,6 +20,7 @@ SRC_ROOT="${SRC_ROOT:-/usr/local/src/3x-ui-residential}"
 SERVICE_NAME="${SERVICE_NAME:-x-ui}"
 ENV_FILE="${ENV_FILE:-/etc/default/x-ui}"
 PREBUILT_ROOT="${PREBUILT_ROOT:-/tmp/3x-ui-residential-prebuilt}"
+INSTALL_RESULT_FILE="${INSTALL_RESULT_FILE:-/etc/x-ui/install-result.env}"
 
 PANEL_PORT="${PANEL_PORT:-2053}"
 PANEL_BASE_PATH="${PANEL_BASE_PATH:-}"
@@ -47,6 +48,12 @@ CREATED_BUILD_SWAP="0"
 TMP_NPM_CACHE="${TMP_NPM_CACHE:-/tmp/xui-npm-cache}"
 TMP_GOMODCACHE="${TMP_GOMODCACHE:-/tmp/xui-go-modcache}"
 TMP_GOCACHE="${TMP_GOCACHE:-/tmp/xui-go-buildcache}"
+PANEL_CREDS_KNOWN="0"
+MIN_APT_FREE_MB="${MIN_APT_FREE_MB:-512}"
+MIN_PREBUILT_FREE_MB="${MIN_PREBUILT_FREE_MB:-512}"
+MIN_INSTALL_FREE_MB="${MIN_INSTALL_FREE_MB:-256}"
+MIN_AIMILI_FREE_MB="${MIN_AIMILI_FREE_MB:-512}"
+MIN_SOURCE_BUILD_FREE_MB="${MIN_SOURCE_BUILD_FREE_MB:-4096}"
 
 if [[ $EUID -ne 0 ]]; then
   echo -e "${red}Please run this installer as root.${plain}"
@@ -101,6 +108,35 @@ ARCH="$(detect_arch)"
 
 info() { echo -e "${blue}==>${plain} $*"; }
 warn() { echo -e "${yellow}==>${plain} $*"; }
+die() { echo -e "${red}Error:${plain} $*" >&2; exit 1; }
+
+disk_cleanup_hint() {
+  cat >&2 <<'EOF'
+Free some disk space and rerun the installer. Useful commands:
+  df -h
+  du -xhd1 / /var /usr /tmp 2>/dev/null | sort -h
+  apt-get clean
+  journalctl --vacuum-size=100M
+EOF
+}
+
+require_free_space() {
+  local dir="$1" min_mb="$2" purpose="$3"
+  local available_mb mount_point
+
+  mkdir -p "$dir"
+  available_mb="$(df -Pm "$dir" 2>/dev/null | awk 'NR==2 {print $4}')"
+  mount_point="$(df -Pm "$dir" 2>/dev/null | awk 'NR==2 {print $6}')"
+
+  [[ "$available_mb" =~ ^[0-9]+$ ]] || die "Unable to determine free disk space for ${dir}."
+
+  if (( available_mb < min_mb )); then
+    echo -e "${red}Error:${plain} Not enough free disk space to ${purpose}." >&2
+    echo -e "Need at least ${yellow}${min_mb} MiB${plain} free on ${mount_point:-$dir}, but only ${yellow}${available_mb} MiB${plain} is available." >&2
+    disk_cleanup_hint
+    exit 1
+  fi
+}
 
 cleanup_build_swap() {
   if [[ "${CREATED_BUILD_SWAP}" != "1" ]]; then
@@ -131,6 +167,7 @@ apt_install() {
 }
 
 install_base_deps() {
+  require_free_space "/var/cache/apt" "${MIN_APT_FREE_MB}" "install system dependencies"
   info "Installing system dependencies"
   apt-get update -y >/dev/null
   apt_install ca-certificates curl git unzip tar build-essential jq python3 openvpn iproute2 iptables >/dev/null
@@ -224,6 +261,7 @@ download_prebuilt_panel() {
 
   local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${PREBUILT_TAG}/${asset}"
   info "Downloading prebuilt package ${asset}"
+  require_free_space "/tmp" "${MIN_PREBUILT_FREE_MB}" "download and extract the prebuilt panel package"
   cleanup_prebuilt_root
   mkdir -p "${PREBUILT_ROOT}"
   if ! curl -fL --connect-timeout 20 --retry 3 --retry-delay 3 "${url}" -o "${PREBUILT_ROOT}/${asset}"; then
@@ -231,8 +269,15 @@ download_prebuilt_panel() {
     cleanup_prebuilt_root
     return 1
   fi
-  tar -xzf "${PREBUILT_ROOT}/${asset}" -C "${PREBUILT_ROOT}"
-  [[ -f "${PREBUILT_ROOT}/x-ui" && -d "${PREBUILT_ROOT}/bin" ]] || {
+  # This function runs inside `if download_prebuilt_panel; then ...`, so rely on
+  # an explicit check instead of `set -e` for tar extraction failures.
+  if ! tar -xzf "${PREBUILT_ROOT}/${asset}" -C "${PREBUILT_ROOT}"; then
+    warn "Failed to extract prebuilt package. The VPS may be out of disk space, or the archive may be corrupt."
+    disk_cleanup_hint
+    cleanup_prebuilt_root
+    return 1
+  fi
+  [[ -f "${PREBUILT_ROOT}/x-ui" && -f "${PREBUILT_ROOT}/bin/xray-linux-${ARCH}" && -f "${PREBUILT_ROOT}/bin/geosite.dat" && -f "${PREBUILT_ROOT}/bin/geoip.dat" ]] || {
     warn "Prebuilt package is incomplete; falling back to source build"
     cleanup_prebuilt_root
     return 1
@@ -241,6 +286,8 @@ download_prebuilt_panel() {
 }
 
 build_panel() {
+  require_free_space "/tmp" "${MIN_SOURCE_BUILD_FREE_MB}" "build x-ui from source"
+  require_free_space "$(dirname "$SRC_ROOT")" "${MIN_SOURCE_BUILD_FREE_MB}" "build x-ui from source"
   ensure_build_swap
   cleanup_build_caches
   mkdir -p "${TMP_NPM_CACHE}" "${TMP_GOMODCACHE}" "${TMP_GOCACHE}"
@@ -270,6 +317,7 @@ build_panel() {
 
 install_panel_files() {
   local source_root="$1"
+  require_free_space "$INSTALL_ROOT" "${MIN_INSTALL_FREE_MB}" "install the panel runtime"
   info "Installing panel runtime into ${INSTALL_ROOT}"
   mkdir -p "$INSTALL_ROOT/bin" /etc/x-ui /var/log/x-ui
   install -m 755 "${source_root}/x-ui" "$INSTALL_ROOT/x-ui"
@@ -281,6 +329,19 @@ install_panel_files() {
 exec ${INSTALL_ROOT}/x-ui "\$@"
 EOF
   chmod +x /usr/bin/x-ui
+}
+
+install_cli_script() {
+  local cli_url="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_BRANCH}/x-ui.sh"
+  local temp_script="/tmp/x-ui-cli.$$"
+  info "Installing x-ui management CLI"
+  if ! curl -fsSL "${cli_url}" -o "${temp_script}"; then
+    echo -e "${red}Failed to download x-ui CLI script from ${cli_url}${plain}"
+    rm -f "${temp_script}"
+    exit 1
+  fi
+  install -m 755 "${temp_script}" /usr/bin/x-ui
+  rm -f "${temp_script}"
 }
 
 upsert_env_line() {
@@ -300,6 +361,8 @@ configure_env() {
   upsert_env_line "$ENV_FILE" "XUI_ENABLE_FAIL2BAN" "$XUI_ENABLE_FAIL2BAN"
   upsert_env_line "$ENV_FILE" "XUI_MAIN_FOLDER" "$INSTALL_ROOT"
   upsert_env_line "$ENV_FILE" "XUI_BIN_FOLDER" "$INSTALL_ROOT/bin"
+  upsert_env_line "$ENV_FILE" "XUI_GITHUB_REPO" "$REPO_OWNER/$REPO_NAME"
+  upsert_env_line "$ENV_FILE" "XUI_GITHUB_REF" "$REPO_BRANCH"
   upsert_env_line "$ENV_FILE" "AIMILI_ENABLED" "false"
 }
 
@@ -350,6 +413,7 @@ ensure_panel_credentials() {
     info "Configuring panel credentials"
     for _ in $(seq 1 15); do
       if "${INSTALL_ROOT}/x-ui" setting -username "$PANEL_USERNAME" -password "$PANEL_PASSWORD" -port "$PANEL_PORT" -webBasePath "$PANEL_BASE_PATH" >/dev/null 2>&1; then
+        PANEL_CREDS_KNOWN="1"
         systemctl restart "${SERVICE_NAME}"
         return
       fi
@@ -363,13 +427,27 @@ ensure_panel_credentials() {
 }
 
 install_aimili() {
+  local aimili_installer=""
   if [[ "$AIMILI_INSTALL" != "true" ]]; then
     warn "Skipping Aimili installation because AIMILI_INSTALL=${AIMILI_INSTALL}"
     return
   fi
 
+  require_free_space "/opt" "${MIN_AIMILI_FREE_MB}" "install aimili-vpngate"
   info "Installing or updating aimili-vpngate"
-  bash <(curl -fsSL "https://raw.githubusercontent.com/${AIMILI_REPO_OWNER}/${AIMILI_REPO_NAME}/main/install.sh")
+  aimili_installer="$(mktemp /tmp/aimili-install.XXXXXX.sh)"
+  if ! curl -fsSL "https://raw.githubusercontent.com/${AIMILI_REPO_OWNER}/${AIMILI_REPO_NAME}/main/install.sh" -o "${aimili_installer}"; then
+    rm -f "${aimili_installer}"
+    warn "Failed to download the Aimili installer."
+    return 1
+  fi
+  if ! bash "${aimili_installer}"; then
+    rm -f "${aimili_installer}"
+    warn "Aimili installer failed. If the log shows 'No space left on device', free disk space and rerun this installer."
+    disk_cleanup_hint
+    return 1
+  fi
+  rm -f "${aimili_installer}"
 
   if [[ -f "$AIMILI_AUTH_FILE" ]]; then
     python3 - <<PY
@@ -397,6 +475,51 @@ PY
   fi
 
   systemctl restart aimilivpn >/dev/null
+}
+
+write_install_result() {
+  local host aimili_user aimili_pass aimili_port aimili_secret panel_user panel_pass
+  host="$(curl -4fsSL https://api.ipify.org || hostname -I | awk '{print $1}')"
+  aimili_user="-"
+  aimili_pass="-"
+  aimili_port="8787"
+  aimili_secret="-"
+  panel_user="${PANEL_USERNAME}"
+  panel_pass="${PANEL_PASSWORD}"
+
+  if [[ "${PANEL_CREDS_KNOWN}" != "1" && -f "${INSTALL_RESULT_FILE}" ]]; then
+    # shellcheck disable=SC1090
+    source "${INSTALL_RESULT_FILE}" || true
+    panel_user="${PANEL_USERNAME:-${panel_user}}"
+    panel_pass="${PANEL_PASSWORD:-${panel_pass}}"
+  fi
+
+  if [[ -f "$AIMILI_AUTH_FILE" ]]; then
+    aimili_user="$(python3 -c "import json; print(json.load(open(${AIMILI_AUTH_FILE@Q})).get('username','-'))" 2>/dev/null || echo '-')"
+    aimili_pass="$(python3 -c "import json; print(json.load(open(${AIMILI_AUTH_FILE@Q})).get('password','-'))" 2>/dev/null || echo '-')"
+    aimili_port="$(python3 -c "import json; print(json.load(open(${AIMILI_AUTH_FILE@Q})).get('port',8787))" 2>/dev/null || echo '8787')"
+    aimili_secret="$(python3 -c "import json; print(json.load(open(${AIMILI_AUTH_FILE@Q})).get('secret_path','-'))" 2>/dev/null || echo '-')"
+  fi
+
+  install -d -m 700 /etc/x-ui
+  local prev_umask
+  prev_umask="$(umask)"
+  umask 077
+  {
+    printf 'PANEL_URL=%q\n' "http://${host}:${PANEL_PORT}/${PANEL_BASE_PATH}"
+    printf 'PANEL_USERNAME=%q\n' "$panel_user"
+    printf 'PANEL_PASSWORD=%q\n' "$panel_pass"
+    printf 'PANEL_PORT=%q\n' "$PANEL_PORT"
+    printf 'PANEL_BASE_PATH=%q\n' "$PANEL_BASE_PATH"
+    printf 'AIMILI_ENTRY=%q\n' "http://${host}:${PANEL_PORT}/panel/aimili"
+    printf 'AIMILI_CONSOLE=%q\n' "http://${host}:${PANEL_PORT}/panel/aimili-console/"
+    printf 'AIMILI_USERNAME=%q\n' "$aimili_user"
+    printf 'AIMILI_PASSWORD=%q\n' "$aimili_pass"
+    printf 'AIMILI_PORT=%q\n' "$aimili_port"
+    printf 'AIMILI_SECRET_PATH=%q\n' "$aimili_secret"
+  } > "${INSTALL_RESULT_FILE}"
+  umask "${prev_umask}"
+  chmod 600 "${INSTALL_RESULT_FILE}" 2>/dev/null || true
 }
 
 print_summary() {
@@ -439,6 +562,7 @@ else
   build_panel
   install_panel_files "${SRC_ROOT}/build"
 fi
+install_cli_script
 configure_env
 install_service
 ensure_panel_credentials
@@ -446,4 +570,5 @@ install_aimili
 systemctl restart "${SERVICE_NAME}"
 sleep 3
 systemctl is-active "${SERVICE_NAME}" >/dev/null
+write_install_result
 print_summary

@@ -34,6 +34,19 @@ PANEL_BASE_PATH='my-panel-path' \
 bash <(curl -fsSL https://raw.githubusercontent.com/NorwayXZ/3x-ui/feature/embed-aimili-vpngate-restart/install-residential-ip.sh)
 ```
 
+Before you run it, keep at least `512 MiB` free for the prebuilt install path. If you force a source build, plan for about `4 GiB` free because the frontend build cache and temporary swap file need extra room.
+
+## Low disk space
+
+If the installer stops with `No space left on device`, free some space and rerun it:
+
+```bash
+df -h
+du -xhd1 / /var /usr /tmp 2>/dev/null | sort -h
+apt-get clean
+journalctl --vacuum-size=100M
+```
+
 ## 3x-ui environment
 
 Add these variables to the `x-ui` service environment file (`/etc/default/x-ui`, `/etc/conf.d/x-ui`, or `/etc/sysconfig/x-ui` depending on distro):
@@ -109,6 +122,29 @@ The proxy rewrites:
 - `Set-Cookie Path`
 
 This avoids exposing the real Aimili secret path on the public panel URL.
+
+## Post-install CLI
+
+After installation, run:
+
+```bash
+x-ui
+```
+
+The CLI keeps the native x-ui operations such as:
+
+- panel start / stop / restart
+- port changes
+- BBR management
+- firewall management
+
+And also adds Residential IP / Aimili visibility:
+
+- current panel URL, username, and password
+- Residential IP entry and console URLs
+- Aimili username and password
+- Aimili start / stop / restart
+- Aimili log tail
 
 ## Rollback
 

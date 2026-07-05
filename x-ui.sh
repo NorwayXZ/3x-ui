@@ -94,6 +94,7 @@ else
 fi
 xui_service="${XUI_SERVICE:=/etc/systemd/system}"
 log_folder="${XUI_LOG_FOLDER:=/var/log/x-ui}"
+xui_install_result_file="/etc/x-ui/install-result.env"
 mkdir -p "${log_folder}"
 iplimit_log_path="${log_folder}/3xipl.log"
 iplimit_banned_log_path="${log_folder}/3xipl-banned.log"
@@ -129,7 +130,7 @@ before_show_menu() {
 }
 
 install() {
-    bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/main/install.sh)
+    bash <(curl -Ls "$(xui_raw_url install-residential-ip.sh)") "${xui_github_ref}"
     if [[ $? == 0 ]]; then
         if [[ $# == 0 ]]; then
             start
@@ -148,7 +149,7 @@ update() {
         fi
         return 0
     fi
-    bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/main/update.sh)
+    bash <(curl -Ls "$(xui_raw_url install-residential-ip.sh)") "${xui_github_ref}"
     if [[ $? == 0 ]]; then
         LOGI "Update is complete, Panel has automatically restarted "
         before_show_menu
@@ -156,7 +157,7 @@ update() {
 }
 
 update_dev() {
-    confirm "This will update x-ui to the latest DEV commit (the rolling 'dev-latest' build, not a stable release). Your data is preserved. Continue?" "y"
+    confirm "This will reinstall x-ui from the currently configured GitHub ref (${xui_github_ref}). Your data is preserved. Continue?" "y"
     if [[ $? != 0 ]]; then
         LOGE "Cancelled"
         if [[ $# == 0 ]]; then
@@ -164,9 +165,7 @@ update_dev() {
         fi
         return 0
     fi
-    # XUI_UPDATE_TAG tells update.sh to install the dev-latest pre-release
-    # instead of the latest stable tag.
-    XUI_UPDATE_TAG="dev-latest" bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/main/update.sh)
+    bash <(curl -Ls "$(xui_raw_url install-residential-ip.sh)") "${xui_github_ref}"
     if [[ $? == 0 ]]; then
         LOGI "Dev update is complete, Panel has automatically restarted "
         before_show_menu
@@ -219,7 +218,7 @@ update_menu() {
         return 0
     fi
 
-    if replace_xui_script "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.sh" "false"; then
+    if replace_xui_script "$(xui_raw_url x-ui.sh)" "false"; then
         chmod +x ${xui_folder}/x-ui.sh
         echo -e "${green}Update successful. The panel has automatically restarted.${plain}"
         exit 0
@@ -238,7 +237,7 @@ legacy_version() {
         exit 1
     fi
     # Use the entered panel version in the download link
-    install_command="bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/v$tag_version/install.sh") v$tag_version"
+    install_command="bash <(curl -Ls \"$(xui_raw_url install-residential-ip.sh)\") ${xui_github_ref}"
 
     echo "Downloading and installing panel version $tag_version..."
     eval $install_command
@@ -262,6 +261,87 @@ xui_env_file_path() {
             echo "/etc/sysconfig/x-ui"
             ;;
     esac
+}
+
+load_xui_service_env() {
+    local env_file
+    env_file="$(xui_env_file_path)"
+    if [[ -r "$env_file" ]]; then
+        # shellcheck disable=SC1090
+        source "$env_file" >/dev/null 2>&1 || true
+    fi
+    xui_folder="${XUI_MAIN_FOLDER:-$xui_folder}"
+    log_folder="${XUI_LOG_FOLDER:-$log_folder}"
+}
+
+load_xui_service_env
+xui_github_repo="${XUI_GITHUB_REPO:-NorwayXZ/3x-ui}"
+xui_github_ref="${XUI_GITHUB_REF:-release/residential-ip-v1}"
+xui_raw_base="https://raw.githubusercontent.com/${xui_github_repo}/${xui_github_ref}"
+
+install_result_get() {
+    local key="$1"
+    [[ -r "${xui_install_result_file}" ]] || return 1
+    bash -c '
+        source "$1" >/dev/null 2>&1 || exit 1
+        k="$2"
+        printf "%s" "${!k:-}"
+    ' _ "${xui_install_result_file}" "$key" 2> /dev/null
+}
+
+install_result_upsert() {
+    local key="$1"
+    local value="$2"
+    local escaped
+    escaped=$(printf '%q' "$value")
+    install -d -m 700 /etc/x-ui 2> /dev/null || true
+    touch "${xui_install_result_file}"
+    chmod 600 "${xui_install_result_file}" 2> /dev/null || true
+    if grep -q "^${key}=" "${xui_install_result_file}" 2> /dev/null; then
+        sed -i "s|^${key}=.*|${key}=${escaped}|" "${xui_install_result_file}"
+    else
+        printf '%s=%s\n' "$key" "$escaped" >> "${xui_install_result_file}"
+    fi
+}
+
+xui_raw_url() {
+    local path="$1"
+    echo "${xui_raw_base}/${path}"
+}
+
+detect_public_ipv4() {
+    local URL_lists=(
+        "https://api4.ipify.org"
+        "https://ipv4.icanhazip.com"
+        "https://v4.api.ipinfo.io/ip"
+        "https://ipv4.myexternalip.com/raw"
+        "https://4.ident.me"
+        "https://check-host.net/ip"
+    )
+    local server_ip=""
+    for ip_address in "${URL_lists[@]}"; do
+        local response
+        response=$(curl -s -w "\n%{http_code}" --max-time 3 "${ip_address}" 2> /dev/null)
+        local http_code
+        http_code=$(echo "$response" | tail -n1)
+        local ip_result
+        ip_result=$(echo "$response" | head -n-1 | tr -d '[:space:]"')
+        if [[ "${http_code}" == "200" && "${ip_result}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            server_ip="${ip_result}"
+            break
+        fi
+    done
+    printf '%s' "$server_ip"
+}
+
+refresh_saved_panel_url() {
+    local info port web_base host
+    info="$(${xui_folder}/x-ui setting -show true 2>/dev/null || true)"
+    port="$(echo "$info" | grep -Eo 'port: .+' | awk '{print $2}')"
+    web_base="$(echo "$info" | grep -Eo 'webBasePath: .+' | awk '{print $2}')"
+    host="$(detect_public_ipv4)"
+    [[ -n "$host" && -n "$port" ]] || return 0
+    install_result_upsert "PANEL_URL" "http://${host}:${port}${web_base}"
 }
 
 uninstall() {
@@ -303,7 +383,7 @@ uninstall() {
     echo ""
     echo -e "Uninstalled Successfully.\n"
     echo "If you need to install this panel again, you can use below command:"
-    echo -e "${green}bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)${plain}"
+    echo -e "${green}bash <(curl -Ls $(xui_raw_url install-residential-ip.sh))${plain}"
     echo ""
     # Trap the SIGTERM signal
     trap delete_script SIGTERM
@@ -335,6 +415,9 @@ reset_user() {
     echo -e "Panel login username has been reset to: ${green} ${config_account} ${plain}"
     echo -e "Panel login password has been reset to: ${green} ${config_password} ${plain}"
     echo -e "${green} Please use the new login username and password to access the X-UI panel. Also remember them! ${plain}"
+    install_result_upsert "PANEL_USERNAME" "${config_account}"
+    install_result_upsert "PANEL_PASSWORD" "${config_password}"
+    refresh_saved_panel_url
     confirm_restart
 }
 
@@ -361,6 +444,8 @@ reset_webbasepath() {
 
     echo -e "Web base path has been reset to: ${green}${config_webBasePath}${plain}"
     echo -e "${green}Please use the new web base path to access the panel.${plain}"
+    install_result_upsert "PANEL_BASE_PATH" "${config_webBasePath}"
+    refresh_saved_panel_url
     restart
 }
 
@@ -377,6 +462,177 @@ reset_config() {
     restart
 }
 
+aimili_service_name() {
+    printf '%s' "${AIMILI_SERVICE_NAME:-aimilivpn}"
+}
+
+aimili_auth_file_path() {
+    printf '%s' "${AIMILI_AUTH_FILE:-/opt/aimilivpn/vpngate_data/ui_auth.json}"
+}
+
+aimili_state_file_path() {
+    printf '%s' "${AIMILI_STATE_FILE:-/opt/aimilivpn/vpngate_data/state.json}"
+}
+
+aimili_log_file_path() {
+    printf '%s' "${AIMILI_LOG_FILE:-/opt/aimilivpn/vpngate_data/vpngate.log}"
+}
+
+aimili_json_get() {
+    local file="$1"
+    local expr="$2"
+    [[ -f "$file" ]] || return 1
+    python3 - <<PY 2>/dev/null
+import json
+with open(${file@Q}, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+value = data
+for part in ${expr@Q}.split('.'):
+    value = value.get(part) if isinstance(value, dict) else None
+    if value is None:
+        break
+print("" if value is None else value)
+PY
+}
+
+aimili_running() {
+    local service
+    service="$(aimili_service_name)"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl is-active --quiet "$service"
+        return $?
+    fi
+    if command -v rc-service >/dev/null 2>&1; then
+        rc-service "$service" status 2>/dev/null | grep -qiE 'started|running'
+        return $?
+    fi
+    return 1
+}
+
+show_aimili_service_status() {
+    local service
+    service="$(aimili_service_name)"
+    if aimili_running; then
+        echo -e "Aimili state: ${green}Running${plain} (${service})"
+    else
+        echo -e "Aimili state: ${yellow}Not Running${plain} (${service})"
+    fi
+}
+
+show_saved_credentials() {
+    local panel_url panel_user panel_pass aimili_entry aimili_console aimili_user aimili_pass
+    panel_url="$(install_result_get PANEL_URL || true)"
+    panel_user="$(install_result_get PANEL_USERNAME || true)"
+    panel_pass="$(install_result_get PANEL_PASSWORD || true)"
+    aimili_entry="$(install_result_get AIMILI_ENTRY || true)"
+    aimili_console="$(install_result_get AIMILI_CONSOLE || true)"
+    aimili_user="$(install_result_get AIMILI_USERNAME || true)"
+    aimili_pass="$(install_result_get AIMILI_PASSWORD || true)"
+
+    [[ -n "$panel_url" ]] && echo -e "${green}Panel URL:${plain} ${panel_url}"
+    [[ -n "$panel_user" ]] && echo -e "${green}Panel user:${plain} ${panel_user}"
+    [[ -n "$panel_pass" ]] && echo -e "${green}Panel password:${plain} ${panel_pass}"
+    [[ -n "$aimili_entry" ]] && echo -e "${green}Residential IP entry:${plain} ${aimili_entry}"
+    [[ -n "$aimili_console" ]] && echo -e "${green}Residential console:${plain} ${aimili_console}"
+    [[ -n "$aimili_user" ]] && echo -e "${green}Aimili user:${plain} ${aimili_user}"
+    [[ -n "$aimili_pass" ]] && echo -e "${green}Aimili password:${plain} ${aimili_pass}"
+}
+
+show_aimili_config() {
+    local auth_file state_file log_file service host port proxy_port secret user pass exit_ip node_id proxy_ip latency last_msg
+    service="$(aimili_service_name)"
+    auth_file="$(aimili_auth_file_path)"
+    state_file="$(aimili_state_file_path)"
+    log_file="$(aimili_log_file_path)"
+
+    echo -e "${blue}Residential IP / Aimili${plain}"
+    show_aimili_service_status
+    echo -e "${green}Auth file:${plain} ${auth_file}"
+    echo -e "${green}State file:${plain} ${state_file}"
+    echo -e "${green}Log file:${plain} ${log_file}"
+
+    host="$(aimili_json_get "$auth_file" "host" || true)"
+    port="$(aimili_json_get "$auth_file" "port" || true)"
+    proxy_port="$(aimili_json_get "$auth_file" "proxy_port" || true)"
+    secret="$(aimili_json_get "$auth_file" "secret_path" || true)"
+    user="$(aimili_json_get "$auth_file" "username" || true)"
+    pass="$(aimili_json_get "$auth_file" "password" || true)"
+    node_id="$(aimili_json_get "$state_file" "active_openvpn_node_id" || true)"
+    proxy_ip="$(aimili_json_get "$state_file" "proxy_ip" || true)"
+    latency="$(aimili_json_get "$state_file" "proxy_latency_ms" || true)"
+    last_msg="$(aimili_json_get "$state_file" "last_check_message" || true)"
+
+    [[ -n "$host" && -n "$port" ]] && echo -e "${green}Aimili UI bind:${plain} ${host}:${port}"
+    [[ -n "$proxy_port" ]] && echo -e "${green}Aimili local proxy:${plain} 127.0.0.1:${proxy_port}"
+    [[ -n "$secret" ]] && echo -e "${green}Aimili secret path:${plain} ${secret}"
+    [[ -n "$user" ]] && echo -e "${green}Aimili user:${plain} ${user}"
+    [[ -n "$pass" ]] && echo -e "${green}Aimili password:${plain} ${pass}"
+    [[ -n "$node_id" ]] && echo -e "${green}Active node:${plain} ${node_id}"
+    [[ -n "$proxy_ip" ]] && echo -e "${green}Exit IP:${plain} ${proxy_ip}"
+    [[ -n "$latency" && "$latency" != "0" ]] && echo -e "${green}Proxy latency:${plain} ${latency} ms"
+    [[ -n "$last_msg" ]] && echo -e "${green}Last status:${plain} ${last_msg}"
+}
+
+aimili_start() {
+    local service
+    service="$(aimili_service_name)"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl start "$service"
+    else
+        rc-service "$service" start
+    fi
+}
+
+aimili_stop() {
+    local service
+    service="$(aimili_service_name)"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl stop "$service"
+    else
+        rc-service "$service" stop
+    fi
+}
+
+aimili_restart() {
+    local service
+    service="$(aimili_service_name)"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl restart "$service"
+    else
+        rc-service "$service" restart
+    fi
+}
+
+aimili_log() {
+    local log_file
+    log_file="$(aimili_log_file_path)"
+    if [[ -f "$log_file" ]]; then
+        tail -f "$log_file"
+        return
+    fi
+    LOGE "Aimili log file not found at ${log_file}"
+}
+
+aimili_menu() {
+    echo -e "\n${green}Residential IP / Aimili Management${plain}"
+    echo -e "${green}\t1.${plain} Show Residential IP Info"
+    echo -e "${green}\t2.${plain} Start Aimili"
+    echo -e "${green}\t3.${plain} Stop Aimili"
+    echo -e "${green}\t4.${plain} Restart Aimili"
+    echo -e "${green}\t5.${plain} Tail Aimili Log"
+    echo -e "${green}\t0.${plain} Back"
+    read -rp "Please enter your selection [0-5]: " aimili_num
+    case "${aimili_num}" in
+        0) show_menu ;;
+        1) show_aimili_config; before_show_menu ;;
+        2) aimili_start; before_show_menu ;;
+        3) aimili_stop; before_show_menu ;;
+        4) aimili_restart; before_show_menu ;;
+        5) aimili_log ;;
+        *) LOGE "Please enter the correct number [0-5]"; aimili_menu ;;
+    esac
+}
+
 check_config() {
     local info=$(${xui_folder}/x-ui setting -show true)
     if [[ $? != 0 ]]; then
@@ -385,6 +641,8 @@ check_config() {
         return
     fi
     LOGI "${info}"
+    show_saved_credentials
+    show_aimili_config
 
     local db_env_file
     db_env_file="$(xui_env_file_path)"
@@ -401,24 +659,8 @@ check_config() {
     local existing_webBasePath=$(echo "$info" | grep -Eo 'webBasePath: .+' | awk '{print $2}')
     local existing_port=$(echo "$info" | grep -Eo 'port: .+' | awk '{print $2}')
     local existing_cert=$(${xui_folder}/x-ui setting -getCert true | grep 'cert:' | awk -F': ' '{print $2}' | tr -d '[:space:]')
-    local URL_lists=(
-        "https://api4.ipify.org"
-        "https://ipv4.icanhazip.com"
-        "https://v4.api.ipinfo.io/ip"
-        "https://ipv4.myexternalip.com/raw"
-        "https://4.ident.me"
-        "https://check-host.net/ip"
-    )
     local server_ip=""
-    for ip_address in "${URL_lists[@]}"; do
-        local response=$(curl -s -w "\n%{http_code}" --max-time 3 "${ip_address}" 2> /dev/null)
-        local http_code=$(echo "$response" | tail -n1)
-        local ip_result=$(echo "$response" | head -n-1 | tr -d '[:space:]"')
-        if [[ "${http_code}" == "200" && "${ip_result}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            server_ip="${ip_result}"
-            break
-        fi
-    done
+    server_ip="$(detect_public_ipv4)"
 
     if [[ -z "$server_ip" ]]; then
         echo -e "${yellow}Could not auto-detect server IP from any provider.${plain}"
@@ -486,6 +728,8 @@ set_port() {
     else
         ${xui_folder}/x-ui setting -port ${port}
         echo -e "The port is set, Please restart the panel now, and use the new port ${green}${port}${plain} to access web panel"
+        install_result_upsert "PANEL_PORT" "${port}"
+        refresh_saved_panel_url
         confirm_restart
     fi
 }
@@ -836,7 +1080,7 @@ enable_bbr() {
 }
 
 update_shell() {
-    if replace_xui_script "https://github.com/MHSanaei/3x-ui/raw/main/x-ui.sh" "true"; then
+    if replace_xui_script "$(xui_raw_url x-ui.sh)" "true"; then
         LOGI "Upgrade script succeeded, Please rerun the script"
         before_show_menu
     else
@@ -955,6 +1199,7 @@ show_status() {
     esac
     show_xray_status
     show_mtproto_status
+    show_aimili_service_status
 }
 
 show_enable_status() {
@@ -3236,6 +3481,8 @@ show_usage() {
 |  ${blue}x-ui restart-xray${plain}          - Restart Xray                     │
 │  ${blue}x-ui status${plain}                - Current Status                   │
 │  ${blue}x-ui settings${plain}              - Current Settings                 │
+│  ${blue}x-ui info${plain}                  - Panel + Residential IP Info      │
+│  ${blue}x-ui aimili${plain}                - Residential IP Management        │
 │  ${blue}x-ui enable${plain}                - Enable Autostart on OS Startup   │
 │  ${blue}x-ui disable${plain}               - Disable Autostart on OS Startup  │
 │  ${blue}x-ui log${plain}                   - Check logs                       │
@@ -3289,10 +3536,11 @@ show_menu() {
 │  ${green}26.${plain} Enable BBR                               │
 │  ${green}27.${plain} Update Geo Files                         │
 │  ${green}28.${plain} Speedtest by Ookla                       │
+│  ${green}29.${plain} Residential IP Management                │
 ╚────────────────────────────────────────────────╝
 "
     show_status
-    echo && read -rp "Please enter your selection [0-28]: " num
+    echo && read -rp "Please enter your selection [0-29]: " num
 
     case "${num}" in
         0)
@@ -3382,8 +3630,11 @@ show_menu() {
         28)
             run_speedtest
             ;;
+        29)
+            aimili_menu
+            ;;
         *)
-            LOGE "Please enter the correct number [0-28]"
+            LOGE "Please enter the correct number [0-29]"
             ;;
     esac
 }
@@ -3407,6 +3658,24 @@ if [[ $# > 0 ]]; then
             ;;
         "settings")
             check_install 0 && check_config 0
+            ;;
+        "info")
+            check_install 0 && check_config 0
+            ;;
+        "aimili")
+            check_install 0 && aimili_menu
+            ;;
+        "aimili-status")
+            check_install 0 && show_aimili_config
+            ;;
+        "aimili-start")
+            check_install 0 && aimili_start
+            ;;
+        "aimili-stop")
+            check_install 0 && aimili_stop
+            ;;
+        "aimili-restart")
+            check_install 0 && aimili_restart
             ;;
         "enable")
             check_install 0 && enable 0
