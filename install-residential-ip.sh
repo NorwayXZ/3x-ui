@@ -10,12 +10,16 @@ plain='\033[0m'
 REPO_OWNER="${REPO_OWNER:-NorwayXZ}"
 REPO_NAME="${REPO_NAME:-3x-ui}"
 REPO_BRANCH="${1:-${REPO_BRANCH:-feature/embed-aimili-vpngate-restart}}"
+PREBUILT_TAG="${PREBUILT_TAG:-residential-ip-prebuilt-v1}"
+PREBUILT_ASSET_AMD64="${PREBUILT_ASSET_AMD64:-3x-ui-residential-linux-amd64.tar.gz}"
+FORCE_SOURCE_BUILD="${FORCE_SOURCE_BUILD:-false}"
 
 GO_VERSION="${GO_VERSION:-1.26.4}"
 INSTALL_ROOT="${INSTALL_ROOT:-/usr/local/x-ui}"
 SRC_ROOT="${SRC_ROOT:-/usr/local/src/3x-ui-residential}"
 SERVICE_NAME="${SERVICE_NAME:-x-ui}"
 ENV_FILE="${ENV_FILE:-/etc/default/x-ui}"
+PREBUILT_ROOT="${PREBUILT_ROOT:-/tmp/3x-ui-residential-prebuilt}"
 
 PANEL_PORT="${PANEL_PORT:-2053}"
 PANEL_BASE_PATH="${PANEL_BASE_PATH:-}"
@@ -105,9 +109,14 @@ cleanup_build_caches() {
   rm -rf "${TMP_NPM_CACHE}" "${TMP_GOMODCACHE}" "${TMP_GOCACHE}" >/dev/null 2>&1 || true
 }
 
+cleanup_prebuilt_root() {
+  rm -rf "${PREBUILT_ROOT}" >/dev/null 2>&1 || true
+}
+
 cleanup_all() {
   cleanup_build_swap
   cleanup_build_caches
+  cleanup_prebuilt_root
 }
 
 trap cleanup_all EXIT
@@ -193,6 +202,39 @@ sync_repo() {
   fi
 }
 
+download_prebuilt_panel() {
+  if [[ "${FORCE_SOURCE_BUILD}" == "true" ]]; then
+    warn "FORCE_SOURCE_BUILD=true set, skipping prebuilt package"
+    return 1
+  fi
+
+  local asset=""
+  case "${ARCH}" in
+    amd64) asset="${PREBUILT_ASSET_AMD64}" ;;
+    *)
+      warn "No prebuilt package configured for architecture ${ARCH}; falling back to source build"
+      return 1
+      ;;
+  esac
+
+  local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${PREBUILT_TAG}/${asset}"
+  info "Downloading prebuilt package ${asset}"
+  cleanup_prebuilt_root
+  mkdir -p "${PREBUILT_ROOT}"
+  if ! curl -fL --connect-timeout 20 --retry 3 --retry-delay 3 "${url}" -o "${PREBUILT_ROOT}/${asset}"; then
+    warn "Failed to download prebuilt package; falling back to source build"
+    cleanup_prebuilt_root
+    return 1
+  fi
+  tar -xzf "${PREBUILT_ROOT}/${asset}" -C "${PREBUILT_ROOT}"
+  [[ -f "${PREBUILT_ROOT}/x-ui" && -d "${PREBUILT_ROOT}/bin" ]] || {
+    warn "Prebuilt package is incomplete; falling back to source build"
+    cleanup_prebuilt_root
+    return 1
+  }
+  return 0
+}
+
 build_panel() {
   ensure_build_swap
   cleanup_build_caches
@@ -222,10 +264,11 @@ build_panel() {
 }
 
 install_panel_files() {
+  local source_root="$1"
   info "Installing panel runtime into ${INSTALL_ROOT}"
   mkdir -p "$INSTALL_ROOT/bin" /etc/x-ui /var/log/x-ui
-  install -m 755 "$SRC_ROOT/build/x-ui" "$INSTALL_ROOT/x-ui"
-  cp -f "$SRC_ROOT"/build/bin/* "$INSTALL_ROOT/bin/"
+  install -m 755 "${source_root}/x-ui" "$INSTALL_ROOT/x-ui"
+  cp -f "${source_root}"/bin/* "$INSTALL_ROOT/bin/"
   chmod +x "$INSTALL_ROOT/bin/"* 2>/dev/null || true
 
   cat > /usr/bin/x-ui <<EOF
@@ -382,11 +425,15 @@ print_summary() {
 }
 
 install_base_deps
-install_node_22
-install_go
-sync_repo
-build_panel
-install_panel_files
+if download_prebuilt_panel; then
+  install_panel_files "${PREBUILT_ROOT}"
+else
+  install_node_22
+  install_go
+  sync_repo
+  build_panel
+  install_panel_files "${SRC_ROOT}/build"
+fi
 configure_env
 install_service
 ensure_panel_credentials
