@@ -354,6 +354,16 @@ upsert_env_line() {
   fi
 }
 
+install_result_get() {
+  local key="$1"
+  [[ -r "${INSTALL_RESULT_FILE}" ]] || return 1
+  bash -c '
+    source "$1" >/dev/null 2>&1 || exit 1
+    k="$2"
+    printf "%s" "${!k:-}"
+  ' _ "${INSTALL_RESULT_FILE}" "$key" 2> /dev/null
+}
+
 configure_env() {
   info "Writing ${ENV_FILE}"
   mkdir -p "$(dirname "$ENV_FILE")"
@@ -449,9 +459,16 @@ install_aimili() {
   tail -n 0 -F "${aimili_log}" 2>/dev/null \
     | stdbuf -oL awk '
         /目标分支:/ ||
+        /\[1\/4\]/ ||
+        /\[2\/4\]/ ||
+        /\[3\/4\]/ ||
+        /\[4\/4\]/ ||
         /首次快速连接模式/ ||
         /正在拉取最新的免费 VPN 节点列表/ ||
+        /正在启动 AimiliVPN 服务并初始化网络/ ||
+        /正在等待 AimiliVPN 首次获取节点并建立加密通道/ ||
         /控制通道已建立/ ||
+        /服务器证书校验成功/ ||
         /正在创建虚拟通道/ ||
         /正在直连测试代理出口延迟与可用性/ ||
         /\[已就绪\]/ ||
