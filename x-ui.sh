@@ -1319,6 +1319,7 @@ firewall_menu() {
 }
 
 install_firewall() {
+    local panel_port sub_port panel_info
     if ! command -v ufw &> /dev/null; then
         echo "ufw firewall is not installed. Installing now..."
         apt-get update
@@ -1327,19 +1328,23 @@ install_firewall() {
         echo "ufw firewall is already installed"
     fi
 
-    # Check if the firewall is inactive
+    panel_info="$(${xui_folder}/x-ui setting -show true 2>/dev/null || true)"
+    panel_port="$(echo "$panel_info" | grep -Eo 'port: .+' | awk '{print $2}')"
+    sub_port="$(echo "$panel_info" | grep -Eo 'subPort: .+' | awk '{print $2}')"
+    [[ -z "$panel_port" ]] && panel_port="2053"
+    [[ -z "$sub_port" ]] && sub_port="2096"
+
+    # Always ensure the core panel ports are allowed, even when UFW is already active.
+    ufw allow ssh
+    ufw allow http
+    ufw allow https
+    ufw allow "${panel_port}/tcp" # webPort
+    ufw allow "${sub_port}/tcp" # subPort
+
     if ufw status | grep -q "Status: active"; then
         echo "Firewall is already active"
     else
         echo "Activating firewall..."
-        # Open the necessary ports
-        ufw allow ssh
-        ufw allow http
-        ufw allow https
-        ufw allow 2053/tcp #webPort
-        ufw allow 2096/tcp #subport
-
-        # Enable the firewall
         ufw --force enable
     fi
 }
@@ -1351,7 +1356,7 @@ open_ports() {
     # Check if the input is valid
     if ! [[ $ports =~ ^([0-9]+|[0-9]+-[0-9]+)(,([0-9]+|[0-9]+-[0-9]+))*$ ]]; then
         echo "Error: Invalid input. Please enter a comma-separated list of ports or a range of ports (e.g. 80,443,2053 or 400-500)." >&2
-        exit 1
+        return 1
     fi
 
     # Open the specified ports using ufw
@@ -1403,14 +1408,14 @@ delete_ports() {
         # Validate the input
         if ! [[ $rule_numbers =~ ^([0-9]+)(,[0-9]+)*$ ]]; then
             echo "Error: Invalid input. Please enter a comma-separated list of rule numbers." >&2
-            exit 1
+            return 1
         fi
 
         # Split numbers into an array
         IFS=',' read -ra RULE_NUMBERS <<< "$rule_numbers"
         for rule_number in "${RULE_NUMBERS[@]}"; do
             # Delete the rule by number
-            ufw delete "$rule_number" || echo "Failed to delete rule number $rule_number"
+            ufw --force delete "$rule_number" || echo "Failed to delete rule number $rule_number"
         done
 
         echo "Selected rules have been deleted."
@@ -1422,7 +1427,7 @@ delete_ports() {
         # Validate the input
         if ! [[ $ports =~ ^([0-9]+|[0-9]+-[0-9]+)(,([0-9]+|[0-9]+-[0-9]+))*$ ]]; then
             echo "Error: Invalid input. Please enter a comma-separated list of ports or a range of ports (e.g. 80,443,2053 or 400-500)." >&2
-            exit 1
+            return 1
         fi
 
         # Split ports into an array
@@ -1433,11 +1438,11 @@ delete_ports() {
                 start_port=$(echo $port | cut -d'-' -f1)
                 end_port=$(echo $port | cut -d'-' -f2)
                 # Delete the port range
-                ufw delete allow $start_port:$end_port/tcp
-                ufw delete allow $start_port:$end_port/udp
+                ufw --force delete allow $start_port:$end_port/tcp
+                ufw --force delete allow $start_port:$end_port/udp
             else
                 # Delete a single port
-                ufw delete allow "$port"
+                ufw --force delete allow "$port"
             fi
         done
 
@@ -2388,12 +2393,36 @@ run_speedtest() {
         fi
     fi
 
-    speedtest
+    speedtest --accept-license --accept-gdpr
 }
 
 ip_validation() {
     ipv6_regex="^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$"
     ipv4_regex="^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?|0)\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]?|0)$"
+}
+
+iplimit_require_ready() {
+    if ! command -v fail2ban-client &> /dev/null; then
+        echo -e "${red}Fail2ban is not installed. Please run option 1 first.${plain}\n"
+        return 1
+    fi
+
+    if [[ $release == "alpine" ]]; then
+        if [[ $(rc-service fail2ban status | grep -F 'status: started' -c) == 0 ]]; then
+            echo -e "${red}Fail2ban service is not running. Please run option 1 first.${plain}\n"
+            return 1
+        fi
+    else
+        if ! systemctl is-active --quiet fail2ban; then
+            echo -e "${red}Fail2ban service is not running. Please run option 1 first.${plain}\n"
+            return 1
+        fi
+    fi
+
+    if [[ ! -f /etc/fail2ban/jail.d/3x-ipl.conf || ! -f /etc/fail2ban/filter.d/3x-ipl.conf || ! -f /etc/fail2ban/action.d/3x-ipl.conf ]]; then
+        echo -e "${red}IP Limit is not configured yet. Please run option 1 first.${plain}\n"
+        return 1
+    fi
 }
 
 iplimit_main() {
@@ -2422,6 +2451,10 @@ iplimit_main() {
             fi
             ;;
         2)
+            iplimit_require_ready || {
+                iplimit_main
+                return
+            }
             read -rp "Please enter new Ban Duration in Minutes [default 30]: " NUM
             if [[ $NUM =~ ^[0-9]+$ ]]; then
                 create_iplimit_jails ${NUM}
@@ -2436,6 +2469,10 @@ iplimit_main() {
             iplimit_main
             ;;
         3)
+            iplimit_require_ready || {
+                iplimit_main
+                return
+            }
             confirm "Proceed with Unbanning everyone from IP Limit jail?" "y"
             if [[ $? == 0 ]]; then
                 fail2ban-client reload --restart --unban 3x-ipl
@@ -2448,40 +2485,70 @@ iplimit_main() {
             iplimit_main
             ;;
         4)
+            iplimit_require_ready || {
+                iplimit_main
+                return
+            }
             show_banlog
             iplimit_main
             ;;
         5)
+            iplimit_require_ready || {
+                iplimit_main
+                return
+            }
             read -rp "Enter the IP address you want to ban: " ban_ip
             ip_validation
             if [[ $ban_ip =~ $ipv4_regex || $ban_ip =~ $ipv6_regex ]]; then
-                fail2ban-client set 3x-ipl banip "$ban_ip"
-                echo -e "${green}IP Address ${ban_ip} has been banned successfully.${plain}"
+                if fail2ban-client set 3x-ipl banip "$ban_ip"; then
+                    echo -e "${green}IP Address ${ban_ip} has been banned successfully.${plain}"
+                else
+                    echo -e "${red}Failed to ban IP address ${ban_ip}.${plain}"
+                fi
             else
                 echo -e "${red}Invalid IP address format! Please try again.${plain}"
             fi
             iplimit_main
             ;;
         6)
+            iplimit_require_ready || {
+                iplimit_main
+                return
+            }
             read -rp "Enter the IP address you want to unban: " unban_ip
             ip_validation
             if [[ $unban_ip =~ $ipv4_regex || $unban_ip =~ $ipv6_regex ]]; then
-                fail2ban-client set 3x-ipl unbanip "$unban_ip"
-                echo -e "${green}IP Address ${unban_ip} has been unbanned successfully.${plain}"
+                if fail2ban-client set 3x-ipl unbanip "$unban_ip"; then
+                    echo -e "${green}IP Address ${unban_ip} has been unbanned successfully.${plain}"
+                else
+                    echo -e "${red}Failed to unban IP address ${unban_ip}.${plain}"
+                fi
             else
                 echo -e "${red}Invalid IP address format! Please try again.${plain}"
             fi
             iplimit_main
             ;;
         7)
+            iplimit_require_ready || {
+                iplimit_main
+                return
+            }
             tail -f /var/log/fail2ban.log
             iplimit_main
             ;;
         8)
+            iplimit_require_ready || {
+                iplimit_main
+                return
+            }
             service fail2ban status
             iplimit_main
             ;;
         9)
+            iplimit_require_ready || {
+                iplimit_main
+                return
+            }
             if [[ $release == "alpine" ]]; then
                 rc-service fail2ban restart
             else
