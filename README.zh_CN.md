@@ -73,6 +73,24 @@
 bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
 ```
 
+### 住宅 IP 稳定分支
+
+当前仓库还提供了一个带 `住宅IP / Aimili` 集成的稳定分支：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/NorwayXZ/3x-ui/release/residential-ip-v1/install-residential-ip.sh)
+```
+
+这个安装器会提供：
+
+- 原生 `3x-ui` 面板
+- 面板内置 `住宅IP` 页面
+- 独立运行的 `aimili-vpngate` 服务
+- 同源 `Open Console` 反向代理入口
+- 原生 `x-ui` 终端命令，并额外带住宅 IP / Aimili 管理能力
+
+完整说明请查看 [docs/aimili-integration.md](docs/aimili-integration.md)。
+
 若要安装特定版本，请在命令后附加对应的标签（例如 `v3.4.0`）：
 
 ```bash
@@ -104,6 +122,71 @@ bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.
 **操作系统：** Ubuntu、Debian、Armbian、Fedora、CentOS、RHEL、AlmaLinux、Rocky Linux、Oracle Linux、Amazon Linux、Virtuozzo、Arch、Manjaro、Parch、openSUSE (Tumbleweed / Leap)、Alpine 和 Windows。
 
 **架构：** `amd64` · `386` · `arm64` (aarch64) · `armv7` · `armv6` · `armv5` · `s390x`。
+
+### 住宅 IP 分支机器要求
+
+对于 `release/residential-ip-v1` 安装器，建议使用：
+
+- **推荐配置：** `2 vCPU`、`2 GB RAM`、`20 GB` 可用磁盘、已开启 `TUN/TAP`
+- **已验证最低配置：** `1 vCPU`、`1 GB RAM`、`2 GB swap`、`10 GB` 可用磁盘、已开启 `TUN/TAP`
+- **推荐架构：** `amd64`
+- **推荐系统：** `Ubuntu 24.04` 或较新的 `Debian`
+
+补充说明：
+
+- 低内存机器可通过安装器自动创建临时 swap 完成安装。
+- 小磁盘 `amd64` 机器优先走预编译包安装，不依赖本地源码编译。
+- `arm64` 机器更容易走源码编译路径，所以对低配机器没有 `amd64` 这么友好。
+
+## 安装后命令
+
+安装完成后，在 VPS 终端里运行：
+
+```bash
+x-ui
+```
+
+常用命令：
+
+```bash
+x-ui info
+x-ui status
+x-ui aimili-status
+x-ui aimili
+```
+
+这些命令可以查看：
+
+- 当前面板地址、端口、访问路径
+- 已记录的面板账号密码
+- 住宅 IP 页面和控制台入口
+- Aimili 账号密码
+- Aimili 服务状态、当前出口 IP、节点和延迟
+- 以及原生 `x-ui` 的改端口、BBR、防火墙、启停重启等能力
+
+## 卸载 / 重装
+
+重新安装住宅 IP 稳定版：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/NorwayXZ/3x-ui/release/residential-ip-v1/install-residential-ip.sh)
+```
+
+手动完整卸载：
+
+```bash
+x-ui uninstall
+systemctl stop aimilivpn 2>/dev/null || true
+systemctl disable aimilivpn 2>/dev/null || true
+rm -rf /opt/aimilivpn
+rm -f /etc/default/aimilivpn /usr/bin/ml /etc/sysctl.d/99-aimilivpn.conf
+```
+
+如果你只想移除住宅 IP 集成、保留面板：
+
+- 删除 `/etc/default/x-ui` 里的 `AIMILI_*`
+- 重启 `x-ui`
+- 停止并禁用 `aimilivpn`
 
 ## 数据库选项
 

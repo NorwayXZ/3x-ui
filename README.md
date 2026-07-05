@@ -73,6 +73,24 @@ Built as an enhanced fork of the original X-UI project, 3X-UI adds broader proto
 bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
 ```
 
+### Residential IP Stable Branch
+
+This repository also ships a stable Residential IP / Aimili integration branch:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/NorwayXZ/3x-ui/release/residential-ip-v1/install-residential-ip.sh)
+```
+
+What you get from that installer:
+
+- normal `3x-ui` panel
+- built-in `Residential IP` page inside the panel
+- independent `aimili-vpngate` service managed by the panel
+- same-origin `Open Console` reverse proxy
+- native `x-ui` terminal command with both original panel operations and Aimili controls
+
+See [docs/aimili-integration.md](docs/aimili-integration.md) for the full deployment guide.
+
 To install a specific version, append its tag (e.g. `v3.4.0`):
 
 ```bash
@@ -104,6 +122,71 @@ zero prompts, generating random credentials and writing them to
 **Operating systems:** Ubuntu, Debian, Armbian, Fedora, CentOS, RHEL, AlmaLinux, Rocky Linux, Oracle Linux, Amazon Linux, Virtuozzo, Arch, Manjaro, Parch, openSUSE (Tumbleweed / Leap), Alpine, and Windows.
 
 **Architectures:** `amd64` · `386` · `arm64` (aarch64) · `armv7` · `armv6` · `armv5` · `s390x`.
+
+### Residential IP Branch Requirements
+
+For the `release/residential-ip-v1` installer, use these requirements:
+
+- **Recommended:** `2 vCPU`, `2 GB RAM`, `20 GB` free disk, `TUN/TAP enabled`
+- **Minimum verified:** `1 vCPU`, `1 GB RAM`, `2 GB swap`, `10 GB` free disk, `TUN/TAP enabled`
+- **Best architecture:** `amd64`
+- **Best OS:** `Ubuntu 24.04` or recent `Debian`
+
+Notes:
+
+- Low-memory VPS nodes are supported by the installer through a temporary build swap file.
+- Small-disk VPS nodes are supported on `amd64` by downloading a prebuilt runtime instead of compiling locally.
+- `arm64` may still require a source build path, so it is less forgiving on very small machines.
+
+## Post-install CLI
+
+After installation, connect to the VPS and run:
+
+```bash
+x-ui
+```
+
+Useful commands:
+
+```bash
+x-ui info
+x-ui status
+x-ui aimili-status
+x-ui aimili
+```
+
+What they provide:
+
+- current panel URL, port, and base path
+- recorded panel username and password
+- Residential IP entry and console URLs
+- Aimili username and password
+- Aimili service state, current exit IP, node, and latency
+- native x-ui operations such as port changes, BBR, firewall, start/stop/restart
+
+## Uninstall / Reinstall
+
+To reinstall the Residential IP branch on a fresh Debian/Ubuntu VPS:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/NorwayXZ/3x-ui/release/residential-ip-v1/install-residential-ip.sh)
+```
+
+To uninstall manually:
+
+```bash
+x-ui uninstall
+systemctl stop aimilivpn 2>/dev/null || true
+systemctl disable aimilivpn 2>/dev/null || true
+rm -rf /opt/aimilivpn
+rm -f /etc/default/aimilivpn /usr/bin/ml /etc/sysctl.d/99-aimilivpn.conf
+```
+
+If you only want to remove the Residential IP integration and keep the panel:
+
+- delete the `AIMILI_*` variables from `/etc/default/x-ui`
+- restart `x-ui`
+- stop and disable `aimilivpn`
 
 ## Database Options
 
