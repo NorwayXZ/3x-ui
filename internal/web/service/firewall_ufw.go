@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 )
@@ -62,4 +63,27 @@ func ufwAllowPort(proto string, port int) {
 		return
 	}
 	logger.Debug("ufw allow", spec, ":", strings.TrimSpace(string(out)))
+}
+
+// SyncInboundFirewallRules scans all enabled local inbounds and best-effort opens
+// their TCP/UDP listen ports in UFW when the firewall is active. Returns the
+// number of inbounds scanned so the CLI can report useful feedback.
+func SyncInboundFirewallRules() (int, error) {
+	active, err := ufwIsActive()
+	if err != nil {
+		return 0, err
+	}
+	if !active {
+		return 0, nil
+	}
+
+	db := database.GetDB()
+	var inbounds []*model.Inbound
+	if err := db.Where("enable = ? AND node_id IS NULL", true).Find(&inbounds).Error; err != nil {
+		return 0, err
+	}
+	for _, ib := range inbounds {
+		ensureInboundFirewallOpen(ib)
+	}
+	return len(inbounds), nil
 }

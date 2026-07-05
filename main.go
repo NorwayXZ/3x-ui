@@ -581,6 +581,7 @@ func main() {
 		fmt.Println("    run            run web panel")
 		fmt.Println("    migrate        migrate form other/old x-ui")
 		fmt.Println("    migrate-db     SQLite <-> .dump (--dump/--restore) or copy into PostgreSQL (--dsn)")
+		fmt.Println("    sync-firewall  Open UFW rules for all enabled local inbound ports")
 		fmt.Println("    setting        set settings")
 	}
 
@@ -634,6 +635,22 @@ func main() {
 		default:
 			fmt.Println("nothing to do: pass --dump <file>, --restore <file> --out <db>, or --dsn <postgres-dsn>")
 		}
+	case "sync-firewall":
+		err := database.InitDB(config.GetDBPath())
+		if err != nil {
+			fmt.Println("Error initializing database:", err)
+			os.Exit(1)
+		}
+		count, err := service.SyncInboundFirewallRules()
+		if err != nil {
+			fmt.Println("failed to sync UFW rules:", err)
+			os.Exit(1)
+		}
+		if count == 0 {
+			fmt.Println("No enabled local inbounds found, or UFW is inactive.")
+			return
+		}
+		fmt.Printf("Synced UFW rules for %d enabled local inbound(s).\n", count)
 	case "setting":
 		err := settingCmd.Parse(os.Args[2:])
 		if err != nil {
