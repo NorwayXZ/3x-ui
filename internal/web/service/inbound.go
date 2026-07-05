@@ -824,6 +824,8 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 		needRestart = true
 	}
 
+	ensureInboundFirewallOpen(inbound)
+
 	return inbound, needRestart, err
 }
 
@@ -1030,6 +1032,7 @@ func (s *InboundService) SetInboundEnable(id int, enable bool) (bool, error) {
 		logger.Debug("SetInboundEnable: AddInbound on", rt.Name(), "failed:", err)
 		needRestart = true
 	}
+	ensureInboundFirewallOpen(inbound)
 	return needRestart, nil
 }
 
@@ -1263,6 +1266,7 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	if txErr != nil {
 		return inbound, false, txErr
 	}
+	ensureInboundFirewallOpen(oldInbound)
 	// After the rename is committed, point any routing rules / loopback outbounds
 	// in xrayTemplateConfig at the new tag (oldInbound.Tag now holds the resolved
 	// new tag; tag holds the pre-edit one). Done post-commit so a sync failure
