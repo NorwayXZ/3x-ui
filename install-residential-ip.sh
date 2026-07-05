@@ -35,6 +35,11 @@ AIMILI_AUTH_FILE="${AIMILI_AUTH_FILE:-/opt/aimilivpn/vpngate_data/ui_auth.json}"
 AIMILI_STATE_FILE="${AIMILI_STATE_FILE:-/opt/aimilivpn/vpngate_data/state.json}"
 AIMILI_LOG_FILE="${AIMILI_LOG_FILE:-/opt/aimilivpn/vpngate_data/vpngate.log}"
 AIMILI_PUBLIC_URL="${AIMILI_PUBLIC_URL:-}"
+BUILD_SWAPFILE="${BUILD_SWAPFILE:-/swapfile-xui-build}"
+BUILD_SWAP_SIZE_MB="${BUILD_SWAP_SIZE_MB:-2048}"
+NODE_BUILD_HEAP_MB="${NODE_BUILD_HEAP_MB:-384}"
+MIN_BUILD_RAM_MB="${MIN_BUILD_RAM_MB:-1500}"
+CREATED_BUILD_SWAP="0"
 
 if [[ $EUID -ne 0 ]]; then
   echo -e "${red}Please run this installer as root.${plain}"
@@ -85,6 +90,16 @@ ARCH="$(detect_arch)"
 info() { echo -e "${blue}==>${plain} $*"; }
 warn() { echo -e "${yellow}==>${plain} $*"; }
 
+cleanup_build_swap() {
+  if [[ "${CREATED_BUILD_SWAP}" != "1" ]]; then
+    return
+  fi
+  swapoff "${BUILD_SWAPFILE}" >/dev/null 2>&1 || true
+  rm -f "${BUILD_SWAPFILE}" >/dev/null 2>&1 || true
+}
+
+trap cleanup_build_swap EXIT
+
 apt_install() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
 }
@@ -125,6 +140,34 @@ install_go() {
   tar -C /usr/local -xzf "/tmp/go${GO_VERSION}.linux-${ARCH}.tar.gz"
 }
 
+ensure_build_swap() {
+  local mem_mb swap_mb
+  mem_mb="$(awk '/MemTotal:/ {print int($2/1024)}' /proc/meminfo)"
+  swap_mb="$(awk '/SwapTotal:/ {print int($2/1024)}' /proc/meminfo)"
+
+  if (( mem_mb >= MIN_BUILD_RAM_MB )) || (( swap_mb >= 512 )); then
+    info "Memory looks sufficient for frontend build (${mem_mb} MiB RAM, ${swap_mb} MiB swap)"
+    return
+  fi
+
+  if [[ -f "${BUILD_SWAPFILE}" ]]; then
+    warn "Using existing swap file ${BUILD_SWAPFILE}"
+    swapon "${BUILD_SWAPFILE}" >/dev/null 2>&1 || true
+    return
+  fi
+
+  warn "Low-memory VPS detected (${mem_mb} MiB RAM, ${swap_mb} MiB swap). Creating temporary ${BUILD_SWAP_SIZE_MB} MiB swap for frontend build."
+  if command -v fallocate >/dev/null 2>&1; then
+    fallocate -l "${BUILD_SWAP_SIZE_MB}M" "${BUILD_SWAPFILE}"
+  else
+    dd if=/dev/zero of="${BUILD_SWAPFILE}" bs=1M count="${BUILD_SWAP_SIZE_MB}" status=none
+  fi
+  chmod 600 "${BUILD_SWAPFILE}"
+  mkswap "${BUILD_SWAPFILE}" >/dev/null
+  swapon "${BUILD_SWAPFILE}"
+  CREATED_BUILD_SWAP="1"
+}
+
 sync_repo() {
   info "Syncing repository ${REPO_OWNER}/${REPO_NAME} (${REPO_BRANCH})"
   mkdir -p "$(dirname "$SRC_ROOT")"
@@ -139,10 +182,12 @@ sync_repo() {
 }
 
 build_panel() {
+  ensure_build_swap
+
   info "Building frontend"
   pushd "$SRC_ROOT/frontend" >/dev/null
-  npm ci >/dev/null
-  npm run build >/dev/null
+  npm ci --no-fund --no-audit >/dev/null
+  CI=1 npm_config_jobs=1 NODE_OPTIONS="--max-old-space-size=${NODE_BUILD_HEAP_MB}" npm run build >/dev/null
   popd >/dev/null
 
   info "Building x-ui binary"
