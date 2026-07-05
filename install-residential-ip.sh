@@ -478,7 +478,7 @@ PY
 }
 
 write_install_result() {
-  local host aimili_user aimili_pass aimili_port aimili_secret panel_user panel_pass
+  local host aimili_user aimili_pass aimili_port aimili_secret panel_user panel_pass current_info current_port current_base
   host="$(curl -4fsSL https://api.ipify.org || hostname -I | awk '{print $1}')"
   aimili_user="-"
   aimili_pass="-"
@@ -493,6 +493,12 @@ write_install_result() {
     panel_user="${PANEL_USERNAME:-${panel_user}}"
     panel_pass="${PANEL_PASSWORD:-${panel_pass}}"
   fi
+
+  current_info="$("${INSTALL_ROOT}/x-ui" setting -show true 2>/dev/null || true)"
+  current_port="$(echo "$current_info" | grep -Eo 'port: .+' | awk '{print $2}')"
+  current_base="$(echo "$current_info" | grep -Eo 'webBasePath: .+' | awk '{print $2}')"
+  [[ -n "${current_port}" ]] && PANEL_PORT="${current_port}"
+  [[ -n "${current_base}" ]] && PANEL_BASE_PATH="${current_base#/}" && PANEL_BASE_PATH="${PANEL_BASE_PATH%/}"
 
   if [[ -f "$AIMILI_AUTH_FILE" ]]; then
     aimili_user="$(python3 -c "import json; print(json.load(open(${AIMILI_AUTH_FILE@Q})).get('username','-'))" 2>/dev/null || echo '-')"
