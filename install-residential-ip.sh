@@ -439,7 +439,9 @@ ensure_panel_credentials() {
 install_aimili() {
   local aimili_installer=""
   local aimili_log=""
-  local tail_pid=""
+  local installer_pid=""
+  local last_note=""
+  local waited=0
   if [[ "$AIMILI_INSTALL" != "true" ]]; then
     warn "Skipping Aimili installation because AIMILI_INSTALL=${AIMILI_INSTALL}"
     return
@@ -456,34 +458,61 @@ install_aimili() {
   aimili_log="$(mktemp /tmp/aimili-install-output.XXXXXX.log)"
   info "Aimili installation may take 1-3 minutes on first run. Waiting for node fetch and first tunnel bring-up..."
   touch "${aimili_log}"
-  tail -n 0 -F "${aimili_log}" 2>/dev/null \
-    | stdbuf -oL awk '
-        /目标分支:/ ||
-        /\[1\/4\]/ ||
-        /\[2\/4\]/ ||
-        /\[3\/4\]/ ||
-        /\[4\/4\]/ ||
-        /首次快速连接模式/ ||
-        /正在拉取最新的免费 VPN 节点列表/ ||
-        /正在启动 AimiliVPN 服务并初始化网络/ ||
-        /正在等待 AimiliVPN 首次获取节点并建立加密通道/ ||
-        /控制通道已建立/ ||
-        /服务器证书校验成功/ ||
-        /正在创建虚拟通道/ ||
-        /正在直连测试代理出口延迟与可用性/ ||
-        /\[已就绪\]/ ||
-        /首次节点连接成功/ ||
-        /加载超时/ ||
-        /错误代码/ ||
-        /失败/ {
-          print "    " $0
-          fflush()
-        }
-    ' &
-  tail_pid=$!
-  if ! bash "${aimili_installer}" >"${aimili_log}" 2>&1; then
-    [[ -n "${tail_pid}" ]] && kill "${tail_pid}" >/dev/null 2>&1 || true
-    wait "${tail_pid}" 2>/dev/null || true
+  bash "${aimili_installer}" >"${aimili_log}" 2>&1 &
+  installer_pid=$!
+
+  while kill -0 "${installer_pid}" >/dev/null 2>&1; do
+    sleep 5
+    waited=$((waited + 5))
+
+    local note=""
+    if [[ -f "${AIMILI_STATE_FILE}" ]]; then
+      note="$(python3 - <<PY 2>/dev/null
+import json
+path = ${AIMILI_STATE_FILE@Q}
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+active = data.get("active_openvpn_node_id") or ""
+msg = data.get("last_check_message") or ""
+connecting = data.get("is_connecting")
+if active and not connecting:
+    print(f"已连接节点: {active}")
+elif msg:
+    print(msg)
+PY
+)"
+    fi
+
+    if [[ -z "${note}" && -s "${aimili_log}" ]]; then
+      note="$(grep -aE '(\[1/4\]|\[2/4\]|\[3/4\]|\[4/4\]|首次快速连接模式|正在拉取最新的免费 VPN 节点列表|正在启动 AimiliVPN 服务并初始化网络|正在等待 AimiliVPN 首次获取节点并建立加密通道|控制通道已建立|服务器证书校验成功|正在创建虚拟通道|正在直连测试代理出口延迟与可用性|首次节点连接成功|\[已就绪\]|加载超时|错误代码|失败)' "${aimili_log}" | tail -n1 | sed 's/^[[:space:]]*//')"
+    fi
+
+    if [[ -z "${note}" && -n "${AIMILI_CONTROL_MODE}" ]] && systemctl is-active --quiet aimilivpn 2>/dev/null; then
+      note="Aimili service is running, waiting for the first available node..."
+    fi
+
+    if [[ -z "${note}" ]]; then
+      note="Aimili installer is still working... (${waited}s elapsed)"
+    fi
+
+    if [[ "${note}" != "${last_note}" || $((waited % 30)) -eq 0 ]]; then
+      echo "    ${note}"
+      last_note="${note}"
+    fi
+
+    if (( waited >= 360 )); then
+      kill "${installer_pid}" >/dev/null 2>&1 || true
+      wait "${installer_pid}" 2>/dev/null || true
+      rm -f "${aimili_installer}"
+      echo -e "${red}Aimili installer timed out after ${waited} seconds.${plain}" >&2
+      echo -e "${yellow}Last installer log lines:${plain}" >&2
+      tail -n 40 "${aimili_log}" >&2 || true
+      rm -f "${aimili_log}"
+      return 1
+    fi
+  done
+
+  if ! wait "${installer_pid}"; then
     rm -f "${aimili_installer}"
     echo -e "${red}Aimili installer failed.${plain}" >&2
     echo -e "${yellow}Last installer log lines:${plain}" >&2
@@ -493,8 +522,6 @@ install_aimili() {
     disk_cleanup_hint
     return 1
   fi
-  [[ -n "${tail_pid}" ]] && kill "${tail_pid}" >/dev/null 2>&1 || true
-  wait "${tail_pid}" 2>/dev/null || true
   rm -f "${aimili_installer}"
   rm -f "${aimili_log}"
   info "Aimili service installed successfully"
