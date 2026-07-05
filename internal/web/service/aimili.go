@@ -73,6 +73,28 @@ type AimiliRuntimeStatus struct {
 	ProxyError          string `json:"proxyError"`
 }
 
+type AimiliFavoriteNode struct {
+	ID           string `json:"id"`
+	IP           string `json:"ip"`
+	RemotePort   int    `json:"remotePort"`
+	Country      string `json:"country"`
+	CountryShort string `json:"countryShort"`
+	Location     string `json:"location"`
+	Owner        string `json:"owner"`
+	IPType       string `json:"ipType"`
+	LatencyMS    int    `json:"latencyMs"`
+	Active       bool   `json:"active"`
+	Quality      string `json:"quality"`
+}
+
+type AimiliFavoritesResult struct {
+	RoutingMode      string               `json:"routingMode"`
+	ActiveNodeID     string               `json:"activeNodeId"`
+	IsConnecting     bool                 `json:"isConnecting"`
+	LastCheckMessage string               `json:"lastCheckMessage"`
+	Favorites        []AimiliFavoriteNode `json:"favorites"`
+}
+
 type AimiliIPHistoryEntry struct {
 	Timestamp string `json:"timestamp"`
 	Region    string `json:"region"`
@@ -149,6 +171,34 @@ type pendingAimiliConnect struct {
 	Timestamp string
 	NodeID    string
 	Trigger   string
+}
+
+type aimiliNodesEnvelope struct {
+	Nodes []aimiliNodeItem `json:"nodes"`
+	State aimiliNodesState `json:"state"`
+}
+
+type aimiliNodesState struct {
+	FavoriteNodeIDs     []string `json:"favorite_node_ids"`
+	ActiveOpenVPNNodeID string   `json:"active_openvpn_node_id"`
+	RoutingMode         string   `json:"routing_mode"`
+	IsConnecting        bool     `json:"is_connecting"`
+	LastCheckMessage    string   `json:"last_check_message"`
+}
+
+type aimiliNodeItem struct {
+	ID           string `json:"id"`
+	IP           string `json:"ip"`
+	RemoteHost   string `json:"remote_host"`
+	RemotePort   int    `json:"remote_port"`
+	Country      string `json:"country"`
+	CountryShort string `json:"country_short"`
+	Location     string `json:"location"`
+	Owner        string `json:"owner"`
+	IPType       string `json:"ip_type"`
+	LatencyMS    int    `json:"latency_ms"`
+	Active       bool   `json:"active"`
+	Quality      string `json:"quality"`
 }
 
 var (
@@ -323,6 +373,91 @@ func (s *AimiliService) RunAction(action, basePath string) (*AimiliActionResult,
 	return result, nil
 }
 
+func (s *AimiliService) GetFavorites() (*AimiliFavoritesResult, error) {
+	cfg := s.LoadConfig()
+	var payload aimiliNodesEnvelope
+	if err := s.doAimiliJSON(cfg, http.MethodGet, "/api/nodes", nil, &payload); err != nil {
+		return nil, err
+	}
+
+	favoriteSet := make(map[string]struct{}, len(payload.State.FavoriteNodeIDs))
+	for _, id := range payload.State.FavoriteNodeIDs {
+		favoriteSet[id] = struct{}{}
+	}
+
+	favorites := make([]AimiliFavoriteNode, 0, len(favoriteSet))
+	for _, node := range payload.Nodes {
+		if _, ok := favoriteSet[node.ID]; !ok {
+			continue
+		}
+		ip := node.IP
+		if ip == "" {
+			ip = node.RemoteHost
+		}
+		favorites = append(favorites, AimiliFavoriteNode{
+			ID:           node.ID,
+			IP:           ip,
+			RemotePort:   node.RemotePort,
+			Country:      node.Country,
+			CountryShort: node.CountryShort,
+			Location:     node.Location,
+			Owner:        node.Owner,
+			IPType:       node.IPType,
+			LatencyMS:    node.LatencyMS,
+			Active:       node.Active,
+			Quality:      node.Quality,
+		})
+	}
+
+	sort.SliceStable(favorites, func(i, j int) bool {
+		if favorites[i].Active != favorites[j].Active {
+			return favorites[i].Active
+		}
+		if favorites[i].LatencyMS != favorites[j].LatencyMS {
+			if favorites[i].LatencyMS == 0 {
+				return false
+			}
+			if favorites[j].LatencyMS == 0 {
+				return true
+			}
+			return favorites[i].LatencyMS < favorites[j].LatencyMS
+		}
+		return favorites[i].ID < favorites[j].ID
+	})
+
+	return &AimiliFavoritesResult{
+		RoutingMode:      payload.State.RoutingMode,
+		ActiveNodeID:     payload.State.ActiveOpenVPNNodeID,
+		IsConnecting:     payload.State.IsConnecting,
+		LastCheckMessage: payload.State.LastCheckMessage,
+		Favorites:        favorites,
+	}, nil
+}
+
+func (s *AimiliService) ConnectNode(id, basePath string) (*AimiliActionResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, errors.New("favorite node id is required")
+	}
+
+	cfg := s.LoadConfig()
+	body := map[string]string{"id": id}
+	var payload map[string]any
+	if err := s.doAimiliJSON(cfg, http.MethodPost, "/api/connect", body, &payload); err != nil {
+		return nil, err
+	}
+
+	result := &AimiliActionResult{Action: "connect"}
+	if msg, ok := payload["message"].(string); ok && msg != "" {
+		result.Output = msg
+	}
+	status, statusErr := s.GetStatus(basePath)
+	if statusErr == nil {
+		result.Status = status
+	}
+	return result, nil
+}
+
 func (s *AimiliService) GetLogs(lines int) (*AimiliLogResult, error) {
 	cfg := s.LoadConfig()
 	lines = clampAimiliLogLines(lines)
@@ -413,6 +548,59 @@ func (s *AimiliService) BuildReverseProxy(basePath string) (*httputil.ReversePro
 		return nil
 	}
 	return proxy, nil
+}
+
+func (s *AimiliService) doAimiliJSON(cfg AimiliConfig, method, reqPath string, body any, out any) error {
+	auth, err := s.readUIAuth(cfg)
+	if err != nil {
+		return err
+	}
+
+	cookie, err := s.issueConsoleSessionCookie(cfg, auth)
+	if err != nil {
+		return err
+	}
+
+	targetURL := (&url.URL{
+		Scheme: cfg.TargetScheme,
+		Host:   joinHostPort(cfg.TargetHost, auth.Port),
+		Path:   "/" + strings.Trim(auth.SecretPath, "/") + reqPath,
+	}).String()
+
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = strings.NewReader(string(raw))
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), method, targetURL, reader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Cookie", cookie)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("Aimili API %s %s returned HTTP %d: %s", method, reqPath, resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	if out == nil {
+		return nil
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
 }
 
 func (s *AimiliService) issueConsoleSessionCookie(cfg AimiliConfig, auth *aimiliUIAuthFile) (string, error) {

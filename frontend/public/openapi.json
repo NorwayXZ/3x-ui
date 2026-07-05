@@ -8948,6 +8948,36 @@
         }
       }
     },
+    "/panel/api/aimili/favorites": {
+      "get": {
+        "tags": [
+          "AimiliVPN Integration"
+        ],
+        "summary": "Return the current favorite Residential IP nodes from Aimili, together with the active node and favorite-routing state. Used by the panel home card so operators can switch directly between favorite exits.",
+        "operationId": "get_panel_api_aimili_favorites",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/panel/api/aimili/console": {
       "get": {
         "tags": [
@@ -9087,6 +9117,47 @@
         ],
         "summary": "Restart the external Aimili service through the configured control mode.",
         "operationId": "post_panel_api_aimili_restart",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/aimili/nodes/{id}/connect": {
+      "post": {
+        "tags": [
+          "AimiliVPN Integration"
+        ],
+        "summary": "Connect one specific Aimili node immediately. This endpoint is used by the Residential IP page to switch directly to a favorite node without opening the full Aimili console.",
+        "operationId": "post_panel_api_aimili_nodes_id_connect",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Aimili node ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",

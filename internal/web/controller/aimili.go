@@ -28,11 +28,13 @@ func NewAimiliConsoleController(g *gin.RouterGroup) *AimiliController {
 
 func (a *AimiliController) initAPIRouter(g *gin.RouterGroup) {
 	g.GET("/status", a.status)
+	g.GET("/favorites", a.favorites)
 	g.GET("/console", a.consoleURL)
 	g.GET("/logs", a.logs)
 	g.POST("/start", a.start)
 	g.POST("/stop", a.stop)
 	g.POST("/restart", a.restart)
+	g.POST("/nodes/:id/connect", a.connectNode)
 }
 
 func (a *AimiliController) initConsoleRouter(g *gin.RouterGroup) {
@@ -60,6 +62,11 @@ func (a *AimiliController) consoleURL(c *gin.Context) {
 	}, nil)
 }
 
+func (a *AimiliController) favorites(c *gin.Context) {
+	result, err := a.aimiliService.GetFavorites()
+	jsonObj(c, result, err)
+}
+
 func (a *AimiliController) logs(c *gin.Context) {
 	lines, _ := strconv.Atoi(c.DefaultQuery("lines", "100"))
 	result, err := a.aimiliService.GetLogs(lines)
@@ -69,6 +76,11 @@ func (a *AimiliController) logs(c *gin.Context) {
 func (a *AimiliController) start(c *gin.Context)   { a.runAction(c, "start") }
 func (a *AimiliController) stop(c *gin.Context)    { a.runAction(c, "stop") }
 func (a *AimiliController) restart(c *gin.Context) { a.runAction(c, "restart") }
+
+func (a *AimiliController) connectNode(c *gin.Context) {
+	result, err := a.aimiliService.ConnectNode(c.Param("id"), c.GetString("base_path"))
+	jsonObj(c, result, err)
+}
 
 func (a *AimiliController) runAction(c *gin.Context, action string) {
 	result, err := a.aimiliService.RunAction(action, c.GetString("base_path"))

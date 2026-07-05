@@ -23,6 +23,8 @@ import {
   PlayCircleOutlined,
   ReloadOutlined,
   StopOutlined,
+  StarFilled,
+  SwapOutlined,
 } from '@ant-design/icons';
 
 import AppSidebar from '@/layouts/AppSidebar';
@@ -47,6 +49,28 @@ interface AimiliRuntimeStatus {
   proxyIp: string;
   proxyLatencyMs: number;
   proxyError: string;
+}
+
+interface AimiliFavoriteNode {
+  id: string;
+  ip: string;
+  remotePort: number;
+  country: string;
+  countryShort: string;
+  location: string;
+  owner: string;
+  ipType: string;
+  latencyMs: number;
+  active: boolean;
+  quality: string;
+}
+
+interface AimiliFavoritesResult {
+  routingMode: string;
+  activeNodeId: string;
+  isConnecting: boolean;
+  lastCheckMessage: string;
+  favorites: AimiliFavoriteNode[];
 }
 
 interface AimiliIPHistoryEntry {
@@ -77,11 +101,6 @@ interface AimiliActionResult {
   output?: string;
 }
 
-interface AimiliLogResult {
-  lines: string[];
-  source: string;
-}
-
 async function fetchAimiliStatus(): Promise<AimiliStatus> {
   const msg = await HttpUtil.get<AimiliStatus>('/panel/api/aimili/status', undefined, { silent: true });
   if (!msg.success || !msg.obj) {
@@ -90,10 +109,10 @@ async function fetchAimiliStatus(): Promise<AimiliStatus> {
   return msg.obj;
 }
 
-async function fetchAimiliLogs(): Promise<AimiliLogResult> {
-  const msg = await HttpUtil.get<AimiliLogResult>('/panel/api/aimili/logs', { lines: 120 }, { silent: true });
+async function fetchFavoriteNodes(): Promise<AimiliFavoritesResult> {
+  const msg = await HttpUtil.get<AimiliFavoritesResult>('/panel/api/aimili/favorites', undefined, { silent: true });
   if (!msg.success || !msg.obj) {
-    throw new Error(msg.msg || '加载日志失败');
+    throw new Error(msg.msg || '加载收藏 IP 失败');
   }
   return msg.obj;
 }
@@ -126,10 +145,10 @@ export default function AimiliPage() {
     queryFn: fetchAimiliStatus,
     refetchInterval: 15_000,
   });
-  const logsQuery = useQuery({
-    queryKey: ['aimili', 'logs'],
-    queryFn: fetchAimiliLogs,
-    refetchInterval: 20_000,
+  const favoritesQuery = useQuery({
+    queryKey: ['aimili', 'favorites'],
+    queryFn: fetchFavoriteNodes,
+    refetchInterval: 15_000,
   });
 
   const actionMut = useMutation({
@@ -146,7 +165,25 @@ export default function AimiliPage() {
       if (result?.output) {
         messageApi.info(result.output);
       }
-      await Promise.all([statusQuery.refetch(), logsQuery.refetch()]);
+      await Promise.all([statusQuery.refetch(), favoritesQuery.refetch()]);
+    },
+    onError: (error) => {
+      const text = error instanceof Error ? error.message : String(error);
+      messageApi.error(text);
+    },
+  });
+
+  const connectMut = useMutation({
+    mutationFn: async (id: string) => {
+      const msg = await HttpUtil.post<AimiliActionResult>(`/panel/api/aimili/nodes/${encodeURIComponent(id)}/connect`, undefined, { silent: true });
+      if (!msg.success) {
+        throw new Error(msg.msg || '切换收藏 IP 失败');
+      }
+      return msg.obj;
+    },
+    onSuccess: async (result) => {
+      messageApi.success(result?.output || '收藏 IP 切换请求已提交');
+      await Promise.all([statusQuery.refetch(), favoritesQuery.refetch()]);
     },
     onError: (error) => {
       const text = error instanceof Error ? error.message : String(error);
@@ -162,12 +199,14 @@ export default function AimiliPage() {
   }, [isDark, isUltra]);
 
   const status = statusQuery.data;
-  const logs = logsQuery.data;
+  const favorites = favoritesQuery.data;
   const runtime = status?.runtime;
   const controlsDisabled = !status || actionMut.isPending || status.controlMode === 'none';
+  const connectDisabled = connectMut.isPending || favorites?.isConnecting;
   const currentIP = runtime?.proxyIp || '-';
   const currentLatency = runtime?.proxyLatencyMs ? `${runtime.proxyLatencyMs} ms` : '检测中';
   const switchHistory = status?.history || [];
+  const favoriteNodes = favorites?.favorites || [];
 
   return (
     <ConfigProvider theme={antdThemeConfig}>
@@ -177,7 +216,7 @@ export default function AimiliPage() {
 
         <Layout className="content-shell">
           <Layout.Content id="content-layout" className="content-area">
-            <Spin spinning={statusQuery.isLoading && !status} size="large" tip="加载住宅 IP 面板中...">
+            <Spin spinning={(statusQuery.isLoading && !status) || (favoritesQuery.isLoading && !favorites)} size="large" tip="加载住宅 IP 面板中...">
               <Space direction="vertical" size={18} style={{ width: '100%' }}>
                 <Card className="aimili-hero-card">
                   <div className="aimili-hero">
@@ -194,7 +233,7 @@ export default function AimiliPage() {
                         icon={<ReloadOutlined />}
                         onClick={() => {
                           void statusQuery.refetch();
-                          void logsQuery.refetch();
+                          void favoritesQuery.refetch();
                         }}
                       >
                         刷新
@@ -231,6 +270,14 @@ export default function AimiliPage() {
                       type="error"
                       showIcon
                       message={statusQuery.error instanceof Error ? statusQuery.error.message : '加载失败'}
+                    />
+                  )}
+
+                  {favoritesQuery.error && (
+                    <Alert
+                      type="error"
+                      showIcon
+                      message={favoritesQuery.error instanceof Error ? favoritesQuery.error.message : '收藏 IP 加载失败'}
                     />
                   )}
                 </Card>
@@ -357,25 +404,61 @@ export default function AimiliPage() {
                   <Col xs={24} xl={14}>
                     <Card
                       className="aimili-card"
-                      title={`实时日志${logs?.source ? ` (${logs.source})` : ''}`}
+                      title="收藏 IP"
                       extra={
-                        <Button size="small" onClick={() => void logsQuery.refetch()} icon={<ReloadOutlined />}>
-                          刷新
-                        </Button>
+                        <Space size={8}>
+                          <Tag color={favorites?.routingMode === 'favorites' ? 'gold' : 'default'}>
+                            {favorites?.routingMode === 'favorites' ? '仅用收藏模式' : '普通模式'}
+                          </Tag>
+                          <Button size="small" onClick={() => void favoritesQuery.refetch()} icon={<ReloadOutlined />}>
+                            刷新
+                          </Button>
+                        </Space>
                       }
                     >
-                      {logsQuery.error ? (
-                        <Alert
-                          type="error"
-                          showIcon
-                          message={logsQuery.error instanceof Error ? logsQuery.error.message : '日志加载失败'}
+                      {favoriteNodes.length ? (
+                        <List
+                          dataSource={favoriteNodes}
+                          className="aimili-favorite-list"
+                          renderItem={(item) => {
+                            const switchDisabled = connectDisabled || item.active;
+                            return (
+                              <List.Item className="aimili-favorite-item">
+                                <div className="aimili-favorite-main">
+                                  <div className="aimili-favorite-head">
+                                    <Space wrap size={8}>
+                                      <Tag color="blue">{item.countryShort || regionLabel(item.id, item.country)}</Tag>
+                                      <Typography.Text strong>{item.ip}:{item.remotePort}</Typography.Text>
+                                      <Tag icon={<StarFilled />} color="gold">已收藏</Tag>
+                                      {item.active && <Tag color="green">当前使用</Tag>}
+                                    </Space>
+                                    <Space>
+                                      <Button
+                                        type={item.active ? 'default' : 'primary'}
+                                        icon={<SwapOutlined />}
+                                        disabled={switchDisabled}
+                                        loading={connectMut.isPending && connectMut.variables === item.id}
+                                        onClick={() => connectMut.mutate(item.id)}
+                                      >
+                                        {item.active ? '使用中' : '切换'}
+                                      </Button>
+                                    </Space>
+                                  </div>
+                                  <div className="aimili-favorite-meta">
+                                    <span>{item.location || item.country || '-'}</span>
+                                    <span>{item.owner || item.ipType || '-'}</span>
+                                    <span>{item.latencyMs ? `${item.latencyMs} ms` : '-'}</span>
+                                  </div>
+                                </div>
+                              </List.Item>
+                            );
+                          }}
                         />
-                      ) : logs?.lines?.length ? (
-                        <Typography.Paragraph className="aimili-log-pane">
-                          {logs.lines.join('\n')}
-                        </Typography.Paragraph>
                       ) : (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志" />
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description="还没有收藏 IP。先在 Open Console 中把常用节点加入收藏，之后就可以直接在这里切换。"
+                        />
                       )}
                     </Card>
                   </Col>

@@ -180,6 +180,37 @@
   line-height: 1.55;
 }
 
+.aimili-favorite-list .ant-list-item {
+  padding: 14px 0;
+}
+
+.aimili-favorite-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.aimili-favorite-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.aimili-favorite-meta {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: rgba(75, 85, 99, 0.9);
+  font-size: 13px;
+}
+
+.aimili-page.is-dark .aimili-favorite-meta,
+.aimili-page.is-ultra .aimili-favorite-meta {
+  color: rgba(203, 213, 225, 0.78);
+}
+
 @media (max-width: 1180px) {
   .aimili-current-grid {
     grid-template-columns: 1fr;
@@ -193,7 +224,8 @@
 
   .aimili-status-row,
   .aimili-history-head,
-  .aimili-history-body {
+  .aimili-history-body,
+  .aimili-favorite-head {
     flex-direction: column;
   }
 

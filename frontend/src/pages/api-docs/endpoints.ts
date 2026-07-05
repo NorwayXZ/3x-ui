@@ -1125,6 +1125,11 @@ export const sections: readonly Section[] = [
       },
       {
         method: 'GET',
+        path: '/panel/api/aimili/favorites',
+        summary: 'Return the current favorite Residential IP nodes from Aimili, together with the active node and favorite-routing state. Used by the panel home card so operators can switch directly between favorite exits.',
+      },
+      {
+        method: 'GET',
         path: '/panel/api/aimili/console',
         summary: 'Return the preferred console URL plus the explicit proxy/direct variants used by the panel’s “Open Console” action.',
       },
@@ -1150,6 +1155,14 @@ export const sections: readonly Section[] = [
         method: 'POST',
         path: '/panel/api/aimili/restart',
         summary: 'Restart the external Aimili service through the configured control mode.',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/aimili/nodes/:id/connect',
+        summary: 'Connect one specific Aimili node immediately. This endpoint is used by the Residential IP page to switch directly to a favorite node without opening the full Aimili console.',
+        params: [
+          { name: 'id', in: 'path', type: 'string', desc: 'Aimili node ID.' },
+        ],
       },
     ],
   },
